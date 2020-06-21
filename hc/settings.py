@@ -9,7 +9,7 @@ import os
 import warnings
 
 import ldap
-from django_auth_ldap.config import LDAPSearch, GroupOfNamesType
+from django_auth_ldap.config import LDAPSearch, LDAPGroupQuery, GroupOfNamesType
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -253,8 +253,10 @@ AUTH_LDAP_USER_ATTR_MAP = {
 }
 
 AUTH_LDAP_USER_FLAGS_BY_GROUP = {
-    'is_staff': 'cn=admins,ou=groups,dc=cloudron',
-    'is_superuser': 'cn=admins,ou=groups,dc=cloudron',
+    # 'is_staff': 'cn=admins,ou=groups,dc=cloudron',
+    # 'is_superuser': 'cn=admins,ou=groups,dc=cloudron',
+    'is_staff': LDAPGroupQuery('cn=admins,ou=groups,dc=cloudron'),
+    'is_superuser': LDAPGroupQuery('cn=admins,ou=groups,dc=cloudron'),
 }
 
 # This is the default, but I like to be explicit.
