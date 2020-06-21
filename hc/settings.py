@@ -236,7 +236,7 @@ AUTH_LDAP_BIND_PASSWORD = os.getenv("AUTH_LDAP_BIND_PASSWORD")
 AUTH_LDAP_USERS_BASE_DN = os.getenv("AUTH_LDAP_USERS_BASE_DN")
 AUTH_LDAP_USER_SEARCH = LDAPSearch(AUTH_LDAP_USERS_BASE_DN,
                                    ldap.SCOPE_SUBTREE,
-                                   '(mail=%(user)s)')
+                                   '(&(objectclass=user)(|(username=%(user)s)(mail=%(user)s)))')
 
 # Set up the basic group parameters.
 AUTH_LDAP_GROUPS_BASE_DN = os.getenv("AUTH_LDAP_GROUPS_BASE_DN")
