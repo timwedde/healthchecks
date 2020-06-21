@@ -77,7 +77,7 @@ AUTHENTICATION_BACKENDS = (
     'django_auth_ldap.backend.LDAPBackend',
     'django.contrib.auth.backends.ModelBackend',
     # "hc.accounts.backends.EmailBackend",
-    # "hc.accounts.backends.ProfileBackend",
+    "hc.accounts.backends.ProfileBackend",
 )
 
 ROOT_URLCONF = "hc.urls"
@@ -253,6 +253,8 @@ AUTH_LDAP_USER_ATTR_MAP = {
 }
 
 AUTH_LDAP_USER_FLAGS_BY_GROUP = {
+    'is_active': 'cn=users,ou=groups,dc=cloudron',
+    'is_staff': 'cn=admins,ou=groups,dc=cloudron',
     'is_superuser': 'cn=admins,ou=groups,dc=cloudron',
 }
 
