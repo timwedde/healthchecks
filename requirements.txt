@@ -2,7 +2,8 @@ cron-descriptor==1.2.24
 croniter==0.3.31
 Django==3.0.7
 django-compressor==2.4
-psycopg2==2.8.4
+psycopg2-binary==2.8.5
 pytz==2020.1
 requests==2.23.0
 statsd==3.3.0
+django-auth-ldap==2.2.0
