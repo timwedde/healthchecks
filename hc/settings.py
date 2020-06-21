@@ -252,11 +252,10 @@ AUTH_LDAP_USER_ATTR_MAP = {
     'email': 'mail',
 }
 
-# AUTH_LDAP_USER_FLAGS_BY_GROUP = {
-#     'is_active': 'cn=users,ou=groups,dc=cloudron',
-#     'is_staff': 'cn=admins,ou=groups,dc=cloudron',
-#     'is_superuser': 'cn=admins,ou=groups,dc=cloudron',
-# }
+AUTH_LDAP_USER_FLAGS_BY_GROUP = {
+    'is_staff': 'cn=admins,ou=groups,dc=cloudron',
+    'is_superuser': 'cn=admins,ou=groups,dc=cloudron',
+}
 
 # This is the default, but I like to be explicit.
 AUTH_LDAP_ALWAYS_UPDATE_USER = True
