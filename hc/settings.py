@@ -242,7 +242,7 @@ AUTH_LDAP_USER_SEARCH = LDAPSearch(AUTH_LDAP_USERS_BASE_DN,
 AUTH_LDAP_GROUPS_BASE_DN = os.getenv("AUTH_LDAP_GROUPS_BASE_DN")
 AUTH_LDAP_GROUP_SEARCH = LDAPSearch(AUTH_LDAP_GROUPS_BASE_DN,
                                     ldap.SCOPE_SUBTREE,
-                                    '(objectClass=groupOfNames)')
+                                    '(objectClass=top)')
 AUTH_LDAP_GROUP_TYPE = GroupOfNamesType(name_attr='cn')
 
 # Populate the Django user from the LDAP directory.
