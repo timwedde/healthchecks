@@ -9,7 +9,7 @@ import os
 import warnings
 
 import ldap
-from django_auth_ldap.config import LDAPSearch, LDAPGroupQuery, GroupOfNamesType
+from django_auth_ldap.config import LDAPSearch, LDAPGroupQuery, GroupOfNamesType, PosixGroupType
 
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -240,10 +240,11 @@ AUTH_LDAP_USER_SEARCH = LDAPSearch(AUTH_LDAP_USERS_BASE_DN,
 
 # Set up the basic group parameters.
 AUTH_LDAP_GROUPS_BASE_DN = os.getenv("AUTH_LDAP_GROUPS_BASE_DN")
+AUTH_LDAP_GROUP_TYPE = PosixGroupType(name_attr='cn')
+# AUTH_LDAP_GROUP_TYPE = GroupOfNamesType(name_attr='cn')
 AUTH_LDAP_GROUP_SEARCH = LDAPSearch(AUTH_LDAP_GROUPS_BASE_DN,
                                     ldap.SCOPE_SUBTREE,
-                                    '(objectClass=top)')
-AUTH_LDAP_GROUP_TYPE = GroupOfNamesType(name_attr='cn')
+                                    '(objectClass=posixGroup)')
 
 # Populate the Django user from the LDAP directory.
 AUTH_LDAP_USER_ATTR_MAP = {
@@ -253,11 +254,11 @@ AUTH_LDAP_USER_ATTR_MAP = {
 }
 
 AUTH_LDAP_USER_FLAGS_BY_GROUP = {
-    # 'is_staff': 'cn=admins,ou=groups,dc=cloudron',
-    # 'is_superuser': 'cn=admins,ou=groups,dc=cloudron',
     'is_staff': LDAPGroupQuery('cn=admins,ou=groups,dc=cloudron'),
     'is_superuser': LDAPGroupQuery('cn=admins,ou=groups,dc=cloudron'),
 }
+
+AUTH_LDAP_MIRROR_GROUPS = True  # Will sync ldap groups to django, if not exist
 
 # This is the default, but I like to be explicit.
 AUTH_LDAP_ALWAYS_UPDATE_USER = True
