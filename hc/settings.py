@@ -76,8 +76,8 @@ MIDDLEWARE = (
 AUTHENTICATION_BACKENDS = (
     'django_auth_ldap.backend.LDAPBackend',
     'django.contrib.auth.backends.ModelBackend',
-    "hc.accounts.backends.EmailBackend",
-    "hc.accounts.backends.ProfileBackend",
+    # "hc.accounts.backends.EmailBackend",
+    # "hc.accounts.backends.ProfileBackend",
 )
 
 ROOT_URLCONF = "hc.urls"
@@ -236,7 +236,7 @@ AUTH_LDAP_BIND_PASSWORD = os.getenv("AUTH_LDAP_BIND_PASSWORD")
 AUTH_LDAP_USERS_BASE_DN = os.getenv("USERS_BASE_DN")
 AUTH_LDAP_USER_SEARCH = LDAPSearch(AUTH_LDAP_USERS_BASE_DN,
                                    ldap.SCOPE_SUBTREE,
-                                   '(&(objectclass=user)(|(username=%uid)(mail=%uid)))')
+                                   '(mail=%(user)s)')
 
 # Set up the basic group parameters.
 AUTH_LDAP_GROUPS_BASE_DN = os.getenv("GROUPS_BASE_DN")
@@ -256,11 +256,11 @@ AUTH_LDAP_USER_ATTR_MAP = {
     'email': 'mail',
 }
 
-AUTH_LDAP_USER_FLAGS_BY_GROUP = {
-    'is_active': 'cn=active,ou=django,ou=groups,dc=cloudron',
-    'is_staff': 'cn=staff,ou=django,ou=groups,dc=cloudron',
-    'is_superuser': 'cn=admins,ou=django,ou=groups,dc=cloudron',
-}
+# AUTH_LDAP_USER_FLAGS_BY_GROUP = {
+#     'is_active': 'cn=active,ou=django,ou=groups,dc=cloudron',
+#     'is_staff': 'cn=staff,ou=django,ou=groups,dc=cloudron',
+#     'is_superuser': 'cn=admins,ou=django,ou=groups,dc=cloudron',
+# }
 
 # This is the default, but I like to be explicit.
 AUTH_LDAP_ALWAYS_UPDATE_USER = True
