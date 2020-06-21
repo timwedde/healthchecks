@@ -228,27 +228,22 @@ SHELL_ENABLED = envbool("SHELL_ENABLED", "False")
 # LDAP
 # Baseline configuration.
 AUTH_LDAP_SERVER_URI = os.getenv("AUTH_LDAP_SERVER_URI")
-print(AUTH_LDAP_SERVER_URI)
 
 AUTH_LDAP_BIND_DN = os.getenv("AUTH_LDAP_BIND_DN")
 AUTH_LDAP_BIND_PASSWORD = os.getenv("AUTH_LDAP_BIND_PASSWORD")
-print(AUTH_LDAP_BIND_DN)
-print(AUTH_LDAP_BIND_PASSWORD)
 
 # Set up the basic user parameters.
-AUTH_LDAP_USERS_BASE_DN = os.getenv("USERS_BASE_DN")
+AUTH_LDAP_USERS_BASE_DN = os.getenv("AUTH_LDAP_USERS_BASE_DN")
 AUTH_LDAP_USER_SEARCH = LDAPSearch(AUTH_LDAP_USERS_BASE_DN,
                                    ldap.SCOPE_SUBTREE,
                                    '(mail=%(user)s)')
-print(AUTH_LDAP_USERS_BASE_DN)
 
 # Set up the basic group parameters.
-AUTH_LDAP_GROUPS_BASE_DN = os.getenv("GROUPS_BASE_DN")
+AUTH_LDAP_GROUPS_BASE_DN = os.getenv("AUTH_LDAP_GROUPS_BASE_DN")
 AUTH_LDAP_GROUP_SEARCH = LDAPSearch(AUTH_LDAP_GROUPS_BASE_DN,
                                     ldap.SCOPE_SUBTREE,
                                     '(objectClass=groupOfNames)')
 AUTH_LDAP_GROUP_TYPE = GroupOfNamesType(name_attr='cn')
-print(AUTH_LDAP_GROUPS_BASE_DN)
 
 # Simple group restrictions
 # AUTH_LDAP_REQUIRE_GROUP = 'cn=enabled,ou=django,ou=groups,dc=example,dc=com'
