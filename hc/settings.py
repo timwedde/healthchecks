@@ -245,10 +245,6 @@ AUTH_LDAP_GROUP_SEARCH = LDAPSearch(AUTH_LDAP_GROUPS_BASE_DN,
                                     '(objectClass=groupOfNames)')
 AUTH_LDAP_GROUP_TYPE = GroupOfNamesType(name_attr='cn')
 
-# Simple group restrictions
-# AUTH_LDAP_REQUIRE_GROUP = 'cn=enabled,ou=django,ou=groups,dc=example,dc=com'
-# AUTH_LDAP_DENY_GROUP = 'cn=disabled,ou=django,ou=groups,dc=example,dc=com'
-
 # Populate the Django user from the LDAP directory.
 AUTH_LDAP_USER_ATTR_MAP = {
     'first_name': 'givenName',
@@ -256,11 +252,9 @@ AUTH_LDAP_USER_ATTR_MAP = {
     'email': 'mail',
 }
 
-# AUTH_LDAP_USER_FLAGS_BY_GROUP = {
-#     'is_active': 'cn=active,ou=django,ou=groups,dc=cloudron',
-#     'is_staff': 'cn=staff,ou=django,ou=groups,dc=cloudron',
-#     'is_superuser': 'cn=admins,ou=django,ou=groups,dc=cloudron',
-# }
+AUTH_LDAP_USER_FLAGS_BY_GROUP = {
+    'is_superuser': 'cn=admins,ou=groups,dc=cloudron',
+}
 
 # This is the default, but I like to be explicit.
 AUTH_LDAP_ALWAYS_UPDATE_USER = True
