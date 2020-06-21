@@ -77,7 +77,7 @@ AUTHENTICATION_BACKENDS = (
     'django_auth_ldap.backend.LDAPBackend',
     'django.contrib.auth.backends.ModelBackend',
     # "hc.accounts.backends.EmailBackend",
-    "hc.accounts.backends.ProfileBackend",
+    # "hc.accounts.backends.ProfileBackend",
 )
 
 ROOT_URLCONF = "hc.urls"
