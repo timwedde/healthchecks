@@ -15,12 +15,16 @@ class EmailThread(Thread):
         self.headers = headers
 
     def run(self):
+        print("creating email")
         msg = EmailMultiAlternatives(
             self.subject, self.text, to=(self.to,), headers=self.headers
         )
 
+        print("adding text to email")
         msg.attach_alternative(self.html, "text/html")
+        print("sending email")
         msg.send()
+        print("finished sending email")
 
 
 def send(name, to, ctx, headers={}):
