@@ -62,6 +62,9 @@ class TeamFieldset(Fieldset):
         "sms_limit",
         "sms_sent",
         "last_sms_date",
+        "call_limit",
+        "calls_sent",
+        "last_call_date",
     )
 
 
@@ -72,6 +75,7 @@ class NumChecksFilter(admin.SimpleListFilter):
 
     def lookups(self, request, model_admin):
         return (
+            ("10", "more than 10"),
             ("20", "more than 20"),
             ("50", "more than 50"),
             ("100", "more than 100"),
@@ -99,10 +103,10 @@ class ProfileAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "email",
+        "checks",
         "date_joined",
         "last_active_date",
         "projects",
-        "checks",
         "invited",
         "sms",
         "reports_allowed",
@@ -129,7 +133,7 @@ class ProfileAdmin(admin.ModelAdmin):
     def email(self, obj):
         s = escape(obj.user.email)
         if obj.plan:
-            return "<span title='%s'>%s</span>" % (obj.plan, s)
+            s = "%s <span>%s</span>" % (s, obj.plan)
 
         return s
 
@@ -140,8 +144,12 @@ class ProfileAdmin(admin.ModelAdmin):
     def projects(self, obj):
         return render_to_string("admin/profile_list_projects.html", {"profile": obj})
 
+    @mark_safe
     def checks(self, obj):
-        return "%d of %d" % (obj.num_checks, obj.check_limit)
+        s = "%d of %d" % (obj.num_checks, obj.check_limit)
+        if obj.num_checks > 1:
+            s = "<b>%s</b>" % s
+        return s
 
     def invited(self, obj):
         return "%d of %d" % (obj.num_members, obj.team_limit)

@@ -38,7 +38,13 @@ from hc.api.transports import Telegram
 from hc.front.decorators import require_setting
 from hc.front import forms
 from hc.front.schemas import telegram_callback
-from hc.front.templatetags.hc_extras import num_down_title, down_title, sortchecks
+from hc.front.templatetags.hc_extras import (
+    num_down_title,
+    down_title,
+    sortchecks,
+    site_hostname,
+    site_scheme,
+)
 from hc.lib import jsonschema
 from hc.lib.badges import get_badge_url
 import pytz
@@ -56,7 +62,7 @@ DOWNTIMES_TMPL = get_template("front/details_downtimes.html")
 def _tags_statuses(checks):
     tags, down, grace, num_down = {}, {}, {}, 0
     for check in checks:
-        status = check.get_status(with_started=False)
+        status = check.get_status()
 
         if status == "down":
             num_down += 1
@@ -209,6 +215,7 @@ def status(request, code):
                 "code": str(check.code),
                 "status": check.get_status(),
                 "last_ping": LAST_PING_TMPL.render(ctx),
+                "started": check.last_start is not None,
             }
         )
 
@@ -262,6 +269,7 @@ def index(request):
         "enable_shell": settings.SHELL_ENABLED is True,
         "enable_slack_btn": settings.SLACK_CLIENT_ID is not None,
         "enable_sms": settings.TWILIO_AUTH is not None,
+        "enable_call": settings.TWILIO_AUTH is not None,
         "enable_telegram": settings.TELEGRAM_TOKEN is not None,
         "enable_trello": settings.TRELLO_APP_KEY is not None,
         "enable_whatsapp": settings.TWILIO_USE_WHATSAPP,
@@ -269,6 +277,10 @@ def index(request):
     }
 
     return render(request, "front/welcome.html", ctx)
+
+
+def dashboard(request):
+    return render(request, "front/dashboard.html", {})
 
 
 def serve_doc(request, doc="introduction"):
@@ -281,6 +293,8 @@ def serve_doc(request, doc="introduction"):
         "{{ default_grace }}": str(int(DEFAULT_GRACE.total_seconds())),
         "SITE_NAME": settings.SITE_NAME,
         "SITE_ROOT": settings.SITE_ROOT,
+        "SITE_HOSTNAME": site_hostname(),
+        "SITE_SCHEME": site_scheme(),
         "PING_ENDPOINT": settings.PING_ENDPOINT,
         "PING_URL": settings.PING_ENDPOINT + "your-uuid-here",
         "IMG_URL": os.path.join(settings.STATIC_URL, "img/docs"),
@@ -344,6 +358,7 @@ def filtering_rules(request, code):
     form = forms.FilteringRulesForm(request.POST)
     if form.is_valid():
         check.subject = form.cleaned_data["subject"]
+        check.subject_fail = form.cleaned_data["subject_fail"]
         check.methods = form.cleaned_data["methods"]
         check.manual_resume = form.cleaned_data["manual_resume"]
         check.save()
@@ -692,6 +707,7 @@ def channels(request, code):
         "enable_shell": settings.SHELL_ENABLED is True,
         "enable_slack_btn": settings.SLACK_CLIENT_ID is not None,
         "enable_sms": settings.TWILIO_AUTH is not None,
+        "enable_call": settings.TWILIO_AUTH is not None,
         "enable_telegram": settings.TELEGRAM_TOKEN is not None,
         "enable_trello": settings.TRELLO_APP_KEY is not None,
         "enable_whatsapp": settings.TWILIO_USE_WHATSAPP,
@@ -786,10 +802,11 @@ def send_test_notification(request, code):
             # send "TEST is UP" notification instead:
             dummy.status = "up"
 
-    if channel.kind == "email":
-        error = channel.transport.notify(dummy, channel.get_unsub_link())
-    else:
-        error = channel.transport.notify(dummy)
+    # Delete all older test notifications for this channel
+    Notification.objects.filter(channel=channel, owner=None).delete()
+
+    # Send the test notification
+    error = channel.notify(dummy, is_test=True)
 
     if error:
         messages.warning(request, "Could not send a test notification. %s" % error)
@@ -1504,6 +1521,32 @@ def add_sms(request, code):
     return render(request, "integrations/add_sms.html", ctx)
 
 
+@require_setting("TWILIO_AUTH")
+@login_required
+def add_call(request, code):
+    project = _get_project_for_user(request, code)
+    if request.method == "POST":
+        form = forms.AddSmsForm(request.POST)
+        if form.is_valid():
+            channel = Channel(project=project, kind="call")
+            channel.name = form.cleaned_data["label"]
+            channel.value = json.dumps({"value": form.cleaned_data["value"]})
+            channel.save()
+
+            channel.assign_all_checks()
+            return redirect("hc-p-channels", project.code)
+    else:
+        form = forms.AddSmsForm()
+
+    ctx = {
+        "page": "channels",
+        "project": project,
+        "form": form,
+        "profile": project.owner_profile,
+    }
+    return render(request, "integrations/add_call.html", ctx)
+
+
 @require_setting("TWILIO_USE_WHATSAPP")
 @login_required
 def add_whatsapp(request, code):
@@ -1691,7 +1734,7 @@ def metrics(request, code, key):
 
         TMPL = """hc_check_up{name="%s", tags="%s", unique_key="%s"} %d\n"""
         for check in checks:
-            value = 0 if check.get_status(with_started=False) == "down" else 1
+            value = 0 if check.get_status() == "down" else 1
             yield TMPL % (esc(check.name), esc(check.tags), check.unique_key, value)
 
         tags_statuses, num_down = _tags_statuses(checks)
@@ -1714,3 +1757,43 @@ def metrics(request, code, key):
         yield "hc_checks_down_total %d\n" % num_down
 
     return HttpResponse(output(checks), content_type="text/plain")
+
+
+@login_required
+def add_spike(request, code):
+    project = _get_project_for_user(request, code)
+
+    if request.method == "POST":
+        form = forms.AddUrlForm(request.POST)
+        if form.is_valid():
+            channel = Channel(project=project, kind="spike")
+            channel.value = form.cleaned_data["value"]
+            channel.save()
+
+            channel.assign_all_checks()
+            return redirect("hc-p-channels", project.code)
+    else:
+        form = forms.AddUrlForm()
+
+    ctx = {"page": "channels", "project": project, "form": form}
+    return render(request, "integrations/add_spike.html", ctx)
+
+
+@login_required
+def add_linenotify(request, code):
+    project = _get_project_for_user(request, code)
+
+    if request.method == "POST":
+        form = forms.AddLineNotifyForm(request.POST)
+        if form.is_valid():
+            channel = Channel(project=project, kind="linenotify")
+            channel.value = form.cleaned_data["token"]
+            channel.save()
+
+            channel.assign_all_checks()
+            return redirect("hc-p-channels", project.code)
+    else:
+        form = forms.AddLineNotifyForm()
+
+    ctx = {"page": "channels", "project": project, "form": form}
+    return render(request, "integrations/add_linenotify.html", ctx)

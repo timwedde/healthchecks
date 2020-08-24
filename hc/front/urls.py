@@ -55,6 +55,7 @@ channel_urls = [
 
 project_urls = [
     path("add_apprise/", views.add_apprise, name="hc-add-apprise"),
+    path("add_call/", views.add_call, name="hc-add-call"),
     path("add_discord/", views.add_discord, name="hc-add-discord"),
     path("add_email/", views.add_email, name="hc-add-email"),
     path("add_matrix/", views.add_matrix, name="hc-add-matrix"),
@@ -77,6 +78,8 @@ project_urls = [
     path("add_webhook/", views.add_webhook, name="hc-add-webhook"),
     path("add_whatsapp/", views.add_whatsapp, name="hc-add-whatsapp"),
     path("add_zulip/", views.add_zulip, name="hc-add-zulip"),
+    path("add_spike/", views.add_spike, name="hc-add-spike"),
+    path("add_linenotify/", views.add_linenotify, name="hc-add-linenotify"),
     path("badges/", views.badges, name="hc-badges"),
     path("checks/", views.my_checks, name="hc-checks"),
     path("checks/add/", views.add_check, name="hc-add-check"),
@@ -88,6 +91,7 @@ project_urls = [
 
 urlpatterns = [
     path("", views.index, name="hc-index"),
+    path("tv/", views.dashboard, name="hc-dashboard"),
     path("checks/cron_preview/", views.cron_preview),
     path("checks/<uuid:code>/", include(check_urls)),
     path("integrations/", include(channel_urls)),

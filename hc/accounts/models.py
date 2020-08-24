@@ -1,5 +1,6 @@
 from datetime import timedelta
 from secrets import token_urlsafe
+from urllib.parse import quote, urlencode
 import uuid
 
 from django.conf import settings
@@ -37,6 +38,7 @@ class ProfileManager(models.Manager):
                 # If not using payments, set high limits
                 profile.check_limit = 500
                 profile.sms_limit = 500
+                profile.call_limit = 500
                 profile.team_limit = 500
 
             profile.save()
@@ -52,9 +54,15 @@ class Profile(models.Model):
     ping_log_limit = models.IntegerField(default=100)
     check_limit = models.IntegerField(default=20)
     token = models.CharField(max_length=128, blank=True)
+
     last_sms_date = models.DateTimeField(null=True, blank=True)
     sms_limit = models.IntegerField(default=5)
     sms_sent = models.IntegerField(default=0)
+
+    last_call_date = models.DateTimeField(null=True, blank=True)
+    call_limit = models.IntegerField(default=0)
+    calls_sent = models.IntegerField(default=0)
+
     team_limit = models.IntegerField(default=2)
     sort = models.CharField(max_length=20, default="created")
     deletion_notice_date = models.DateTimeField(null=True, blank=True)
@@ -127,6 +135,13 @@ class Profile(models.Model):
             ctx["url"] = settings.SITE_ROOT + reverse("hc-pricing")
 
         emails.sms_limit(self.user.email, ctx)
+
+    def send_call_limit_notice(self):
+        ctx = {"limit": self.call_limit}
+        if self.call_limit != 500 and settings.USE_PAYMENTS:
+            ctx["url"] = settings.SITE_ROOT + reverse("hc-pricing")
+
+        emails.call_limit(self.user.email, ctx)
 
     def projects(self):
         """ Return a queryset of all projects we have access to. """
@@ -229,6 +244,29 @@ class Profile(models.Model):
         self.save()
         return True
 
+    def calls_sent_this_month(self):
+        # IF last_call_date was never set, we have not made any phone calls yet.
+        if not self.last_call_date:
+            return 0
+
+        # If last sent date is not from this month, we've made 0 calls this month.
+        if month(timezone.now()) > month(self.last_call_date):
+            return 0
+
+        return self.calls_sent
+
+    def authorize_call(self):
+        """ If monthly limit not exceeded, increase counter and return True """
+
+        sent_this_month = self.calls_sent_this_month()
+        if sent_this_month >= self.call_limit:
+            return False
+
+        self.calls_sent = sent_this_month + 1
+        self.last_call_date = timezone.now()
+        self.save()
+        return True
+
     def num_checks_used(self):
         from hc.api.models import Check
 
@@ -281,9 +319,16 @@ class Project(models.Model):
         return used < self.owner_profile.team_limit
 
     def invite(self, user):
+        if Member.objects.filter(user=user, project=self).exists():
+            return False
+
+        if self.owner_id == user.id:
+            return False
+
         Member.objects.create(user=user, project=self)
         checks_url = reverse("hc-checks", args=[self.code])
         user.profile.send_instant_login_link(self, redirect_url=checks_url)
+        return True
 
     def set_next_nag_date(self):
         """ Set next_nag_date on profiles of all members of this project. """
@@ -300,7 +345,7 @@ class Project(models.Model):
     def overall_status(self):
         status = "up"
         for check in self.check_set.all():
-            check_status = check.get_status(with_started=False)
+            check_status = check.get_status()
             if status == "up" and check_status == "grace":
                 status = "grace"
 
@@ -322,11 +367,25 @@ class Project(models.Model):
     def transfer_request(self):
         return self.member_set.filter(transfer_request_date__isnull=False).first()
 
+    def dashboard_url(self):
+        if not self.api_key_readonly:
+            return None
+
+        frag = urlencode({self.api_key_readonly: str(self)}, quote_via=quote)
+        return reverse("hc-dashboard") + "#" + frag
+
 
 class Member(models.Model):
     user = models.ForeignKey(User, models.CASCADE, related_name="memberships")
     project = models.ForeignKey(Project, models.CASCADE)
     transfer_request_date = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "project"], name="accounts_member_no_duplicates"
+            )
+        ]
 
     def can_accept(self):
         return self.user.profile.can_accept(self.project)

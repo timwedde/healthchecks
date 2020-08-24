@@ -55,14 +55,14 @@ class Transport(object):
 
 
 class Email(Transport):
-    def notify(self, check, bounce_url):
+    def notify(self, check):
         if not self.channel.email_verified:
             return "Email not verified"
 
         unsub_link = self.channel.get_unsub_link()
 
         headers = {
-            "X-Bounce-Url": bounce_url,
+            "X-Status-Url": check.status_url,
             "List-Unsubscribe": "<%s>" % unsub_link,
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
         }
@@ -88,9 +88,6 @@ class Email(Transport):
         emails.alert(self.channel.email_value, ctx, headers)
 
     def is_noop(self, check):
-        if not self.channel.email_verified:
-            return True
-
         if check.status == "down":
             return not self.channel.email_notify_down
         else:
@@ -474,8 +471,35 @@ class Sms(HttpTransport):
 
         data = {
             "From": settings.TWILIO_FROM,
-            "To": self.channel.sms_number,
+            "To": self.channel.phone_number,
             "Body": text,
+            "StatusCallback": check.status_url,
+        }
+
+        return self.post(url, data=data, auth=auth)
+
+
+class Call(HttpTransport):
+    URL = "https://api.twilio.com/2010-04-01/Accounts/%s/Calls.json"
+
+    def is_noop(self, check):
+        return check.status != "down"
+
+    def notify(self, check):
+        profile = Profile.objects.for_user(self.channel.project.owner)
+        if not profile.authorize_call():
+            profile.send_call_limit_notice()
+            return "Monthly phone call limit exceeded"
+
+        url = self.URL % settings.TWILIO_ACCOUNT
+        auth = (settings.TWILIO_ACCOUNT, settings.TWILIO_AUTH)
+        twiml = tmpl("call_message.html", check=check, site_name=settings.SITE_NAME)
+
+        data = {
+            "From": settings.TWILIO_FROM,
+            "To": self.channel.phone_number,
+            "Twiml": twiml,
+            "StatusCallback": check.status_url,
         }
 
         return self.post(url, data=data, auth=auth)
@@ -502,8 +526,9 @@ class WhatsApp(HttpTransport):
 
         data = {
             "From": "whatsapp:%s" % settings.TWILIO_FROM,
-            "To": "whatsapp:%s" % self.channel.sms_number,
+            "To": "whatsapp:%s" % self.channel.phone_number,
             "Body": text,
+            "StatusCallback": check.status_url,
         }
 
         return self.post(url, data=data, auth=auth)
@@ -580,3 +605,31 @@ class Zulip(HttpTransport):
         }
 
         return self.post(url, data=data, auth=auth)
+
+
+class Spike(HttpTransport):
+    def notify(self, check):
+        url = self.channel.value
+        headers = {"Conent-Type": "application/json"}
+        payload = {
+            "check_id": str(check.code),
+            "title": tmpl("spike_title.html", check=check),
+            "message": tmpl("spike_description.html", check=check),
+            "status": check.status,
+        }
+
+        return self.post(url, json=payload, headers=headers)
+
+
+class LineNotify(HttpTransport):
+    URL = "https://notify-api.line.me/api/notify"
+
+    def notify(self, check):
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Authorization": "Bearer %s" % self.channel.linenotify_token,
+        }
+        payload = {
+            "message": tmpl("linenotify_message.html", check=check)
+        }
+        return self.post(self.URL, headers=headers, params=payload)

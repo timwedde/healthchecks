@@ -359,7 +359,7 @@ def badge(request, badge_key, signature, tag, fmt="svg"):
             continue
 
         total += 1
-        check_status = check.get_status(with_started=False)
+        check_status = check.get_status()
 
         if check_status == "down":
             down += 1
@@ -393,24 +393,41 @@ def badge(request, badge_key, signature, tag, fmt="svg"):
 
 @csrf_exempt
 @require_POST
-def bounce(request, code):
+def notification_status(request, code):
+    """ Handle notification delivery status callbacks. """
+
     notification = get_object_or_404(Notification, code=code)
 
-    # If webhook is more than 10 minutes late, don't accept it:
     td = timezone.now() - notification.created
-    if td.total_seconds() > 600:
-        return HttpResponseForbidden()
+    if td.total_seconds() > 3600:
+        # If the webhook is called more than 1 hour after the notification, ignore it.
+        # Return HTTP 200 so the other party doesn't retry over and over again:
+        return HttpResponse()
 
-    notification.error = request.body.decode()[:200]
-    notification.save()
+    error, mark_not_verified = None, False
 
-    notification.channel.last_error = notification.error
-    if request.GET.get("type") in (None, "Permanent"):
-        # For permanent bounces, mark the channel as not verified, so we
-        # will not try to deliver to it again.
-        notification.channel.email_verified = False
+    # Look for "error" and "mark_not_verified" keys:
+    if request.POST.get("error"):
+        error = request.POST["error"][:200]
+        mark_not_verified = request.POST.get("mark_not_verified")
 
-    notification.channel.save()
+    # Handle "MessageStatus" key from Twilio
+    if request.POST.get("MessageStatus") in ("failed", "undelivered"):
+        status = request.POST["MessageStatus"]
+        error = f"Delivery failed (status={status})."
+
+    # Handle "CallStatus" key from Twilio
+    if request.POST.get("CallStatus") == "failed":
+        error = f"Delivery failed (status=failed)."
+
+    if error:
+        notification.error = error
+        notification.save(update_fields=["error"])
+
+        channel_q = Channel.objects.filter(id=notification.channel_id)
+        channel_q.update(last_error=error)
+        if mark_not_verified:
+            channel_q.update(email_verified=False)
 
     return HttpResponse()
 

@@ -1,4 +1,4 @@
-{% load hc_extras %}
+{% load hc_extras static %}
 <table
     id="checks-table"
     class="table"
@@ -61,6 +61,11 @@
 
         <td class="indicator-cell">
             <span class="status icon-{{ check.get_status }}" data-toggle="tooltip"></span>
+            <div class="spinner {% if check.last_start %}started{% endif %}">
+                <div class="d1"></div>
+                <div class="d2"></div>
+                <div class="d3"></div>
+            </div>
         </td>
         <td>
             <div data-name="{{ check.name }}"

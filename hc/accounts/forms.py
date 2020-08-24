@@ -20,6 +20,9 @@ class AvailableEmailForm(forms.Form):
 
     def clean_identity(self):
         v = self.cleaned_data["identity"]
+        if len(v) > 254:
+            raise forms.ValidationError("Address is too long.")
+
         if User.objects.filter(email=v).exists():
             raise forms.ValidationError(
                 "An account with this email address already exists."
@@ -95,7 +98,7 @@ class ChangeEmailForm(forms.Form):
 
 
 class InviteTeamMemberForm(forms.Form):
-    email = LowercaseEmailField()
+    email = LowercaseEmailField(max_length=254)
 
 
 class RemoveTeamMemberForm(forms.Form):
@@ -103,7 +106,7 @@ class RemoveTeamMemberForm(forms.Form):
 
 
 class ProjectNameForm(forms.Form):
-    name = forms.CharField(max_length=200, required=True)
+    name = forms.CharField(max_length=60, required=True)
 
 
 class TransferForm(forms.Form):

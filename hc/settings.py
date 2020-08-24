@@ -70,6 +70,7 @@ MIDDLEWARE = (
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django.middleware.locale.LocaleMiddleware",
     "hc.accounts.middleware.TeamAccessMiddleware",
 )
 
@@ -93,6 +94,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "hc.front.context_processors.branding",
                 "hc.payments.context_processors.payments",
             ]
         },
@@ -147,13 +149,11 @@ if os.getenv("DB") == "mysql":
         }
     }
 
-TIME_ZONE = "UTC"
-
-USE_I18N = False
-
-USE_L10N = False
-
 USE_TZ = True
+TIME_ZONE = "UTC"
+USE_I18N = True
+USE_L10N = True
+LOCALE_PATHS = (os.path.join(BASE_DIR, "locale"),)
 
 SITE_ROOT = os.getenv("SITE_ROOT", "http://localhost:8000")
 SITE_NAME = os.getenv("SITE_NAME", "Mychecks")

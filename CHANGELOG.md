@@ -1,7 +1,22 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## v1.17.0-dev - Unreleased
+
+## Improvements
+- Django 3.1
+- Handle status callbacks from Twilio, show delivery failures in Integrations
+- Removing unused /api/v1/notifications/{uuid}/bounce endpoint
+- Less verbose output in the `senddeletionnotices` command
+- Host a read-only dashboard (from github.com/healthchecks/dashboard/)
+- LINE Notify integration (#412)
+
+## Bug Fixes
+- Handle excessively long email addresses in the signup form
+- Handle excessively long email addresses in the team member invite form
+- Don't allow duplicate team memberships
+
+## v1.16.0 - 2020-08-04
 
 ### Improvements
 - Paused ping handling can be controlled via API (#376)
@@ -9,10 +24,18 @@ All notable changes to this project will be documented in this file.
 - The /api/v1/checks/ endpoint now accepts either UUID or `unique_key` (#370)
 - Added /api/v1/checks/uuid/flips/ endpoint (#349)
 - In the cron expression dialog, show a human-friendly version of the expression
-
+- Indicate a started check with a progress spinner under status icon (#338)
+- Added "Docs > Reliability Tips" page
+- Spike.sh integration (#402)
+- Updated Discord integration to use discord.com instead of discordapp.com
+- Add "Failure Keyword" filtering for inbound emails (#396)
+- Add support for multiple, comma-separated keywords (#396)
+- New integration: phone calls (#403)
 
 ### Bug Fixes
 - Removing Pager Team integration, project appears to be discontinued
+- Sending a test notification updates Channel.last_error (#391)
+- Handle HTTP 429 responses from Matrix server when joining a Matrix room
 
 ## v1.15.0 - 2020-06-04
 

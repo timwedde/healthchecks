@@ -63,9 +63,23 @@ class NameTagsForm(forms.Form):
 
 
 class FilteringRulesForm(forms.Form):
+    filter_by_subject = forms.ChoiceField(choices=(("no", "no"), ("yes", "yes")))
     subject = forms.CharField(required=False, max_length=100)
+    subject_fail = forms.CharField(required=False, max_length=100)
     methods = forms.ChoiceField(required=False, choices=(("", "Any"), ("POST", "POST")))
     manual_resume = forms.BooleanField(required=False)
+
+    def clean_subject(self):
+        if self.cleaned_data["filter_by_subject"] == "yes":
+            return self.cleaned_data["subject"]
+
+        return ""
+
+    def clean_subject_fail(self):
+        if self.cleaned_data["filter_by_subject"] == "yes":
+            return self.cleaned_data["subject_fail"]
+
+        return ""
 
 
 class TimeoutForm(forms.Form):
@@ -207,7 +221,14 @@ class AddMatrixForm(forms.Form):
         url = settings.MATRIX_HOMESERVER
         url += "/_matrix/client/r0/join/%s?" % quote(v)
         url += urlencode({"access_token": settings.MATRIX_ACCESS_TOKEN})
-        doc = requests.post(url, {}).json()
+        r = requests.post(url, {})
+        if r.status_code == 429:
+            raise forms.ValidationError(
+                "Matrix server returned status code 429 (Too Many Requests), "
+                "please try again later."
+            )
+
+        doc = r.json()
         if "error" in doc:
             raise forms.ValidationError("Response from Matrix: %s" % doc["error"])
 
@@ -238,3 +259,8 @@ class AddZulipForm(forms.Form):
 
     def get_value(self):
         return json.dumps(dict(self.cleaned_data), sort_keys=True)
+
+
+class AddLineNotifyForm(forms.Form):
+    error_css_class = "has-error"
+    token = forms.CharField(max_length=50)

@@ -49,6 +49,9 @@ CHANNEL_KINDS = (
     ("msteams", "Microsoft Teams"),
     ("shell", "Shell Command"),
     ("zulip", "Zulip"),
+    ("spike", "Spike"),
+    ("call", "Phone Call"),
+    ("linenotify", "LINE Notify"),
 )
 
 PO_PRIORITIES = {-2: "lowest", -1: "low", 0: "normal", 1: "high", 2: "emergency"}
@@ -74,14 +77,15 @@ class Check(models.Model):
     schedule = models.CharField(max_length=100, default="* * * * *")
     tz = models.CharField(max_length=36, default="UTC")
     subject = models.CharField(max_length=100, blank=True)
+    subject_fail = models.CharField(max_length=100, blank=True)
     methods = models.CharField(max_length=30, blank=True)
-    manual_resume = models.NullBooleanField(default=False)
+    manual_resume = models.BooleanField(default=False)
 
     n_pings = models.IntegerField(default=0)
     last_ping = models.DateTimeField(null=True, blank=True)
     last_start = models.DateTimeField(null=True, blank=True)
     last_duration = models.DurationField(null=True, blank=True)
-    last_ping_was_fail = models.NullBooleanField(default=False)
+    last_ping_was_fail = models.BooleanField(default=False)
     has_confirmation_link = models.BooleanField(default=False)
     alert_after = models.DateTimeField(null=True, blank=True, editable=False)
     status = models.CharField(max_length=6, choices=STATUSES, default="new")
@@ -119,7 +123,7 @@ class Check(models.Model):
         if self.last_duration and self.last_duration < MAX_DELTA:
             return self.last_duration
 
-    def get_grace_start(self):
+    def get_grace_start(self, with_started=True):
         """ Return the datetime when the grace period starts.
 
         If the check is currently new, paused or down, return None.
@@ -142,7 +146,7 @@ class Check(models.Model):
             it = croniter(self.schedule, last_local)
             result = it.next(datetime)
 
-        if self.last_start and self.status != "down":
+        if with_started and self.last_start and self.status != "down":
             result = min(result, self.last_start)
 
         if result != NEVER:
@@ -160,7 +164,7 @@ class Check(models.Model):
         if grace_start is not None:
             return grace_start + self.grace
 
-    def get_status(self, now=None, with_started=True):
+    def get_status(self, now=None, with_started=False):
         """ Return current status for display. """
 
         if now is None:
@@ -175,7 +179,7 @@ class Check(models.Model):
         if self.status in ("new", "paused", "down"):
             return self.status
 
-        grace_start = self.get_grace_start()
+        grace_start = self.get_grace_start(with_started=with_started)
         grace_end = grace_start + self.grace
         if now >= grace_end:
             return "down"
@@ -184,6 +188,9 @@ class Check(models.Model):
             return "grace"
 
         return "up"
+
+    def get_status_with_started(self):
+        return self.get_status(with_started=True)
 
     def assign_all_channels(self):
         channels = Channel.objects.filter(project=self.project)
@@ -214,7 +221,7 @@ class Check(models.Model):
             "desc": self.desc,
             "grace": int(self.grace.total_seconds()),
             "n_pings": self.n_pings,
-            "status": self.get_status(),
+            "status": self.get_status(with_started=True),
             "last_ping": isostring(self.last_ping),
             "next_ping": isostring(self.get_grace_start()),
             "manual_resume": self.manual_resume,
@@ -371,7 +378,7 @@ class Channel(models.Model):
         if self.kind == "email":
             return "Email to %s" % self.email_value
         elif self.kind == "sms":
-            return "SMS to %s" % self.sms_number
+            return "SMS to %s" % self.phone_number
         elif self.kind == "slack":
             return "Slack %s" % self.slack_channel
         elif self.kind == "telegram":
@@ -453,28 +460,38 @@ class Channel(models.Model):
             return transports.Shell(self)
         elif self.kind == "zulip":
             return transports.Zulip(self)
+        elif self.kind == "spike":
+            return transports.Spike(self)
+        elif self.kind == "call":
+            return transports.Call(self)
+        elif self.kind == "linenotify":
+            return transports.LineNotify(self)
         else:
             raise NotImplementedError("Unknown channel kind: %s" % self.kind)
 
-    def notify(self, check):
+    def notify(self, check, is_test=False):
         if self.transport.is_noop(check):
             return "no-op"
 
-        n = Notification(owner=check, channel=self)
+        n = Notification(channel=self)
+        if is_test:
+            # When sending a test notification we leave the owner field null.
+            # (the passed check is a dummy, unsaved Check instance)
+            pass
+        else:
+            n.owner = check
+
         n.check_status = check.status
         n.error = "Sending"
         n.save()
 
-        if self.kind == "email":
-            error = self.transport.notify(check, n.bounce_url()) or ""
-        else:
-            error = self.transport.notify(check) or ""
+        # These are not database fields. It is just a convenient way to pass
+        # status_url to transport classes.
+        check.status_url = n.status_url()
 
-        n.error = error
-        n.save()
-
-        self.last_error = error
-        self.save()
+        error = self.transport.notify(check) or ""
+        Notification.objects.filter(id=n.id).update(error=error)
+        Channel.objects.filter(id=self.id).update(last_error=error)
 
         return error
 
@@ -572,7 +589,14 @@ class Channel(models.Model):
     def discord_webhook_url(self):
         assert self.kind == "discord"
         doc = json.loads(self.value)
-        return doc["webhook"]["url"]
+        url = doc["webhook"]["url"]
+
+        # Discord migrated to discord.com,
+        # and is dropping support for discordapp.com on 7 November 2020
+        if url.startswith("https://discordapp.com/"):
+            url = "https://discord.com/" + url[23:]
+
+        return url
 
     @property
     def discord_webhook_id(self):
@@ -618,8 +642,8 @@ class Channel(models.Model):
         return Notification.objects.filter(channel=self).latest()
 
     @property
-    def sms_number(self):
-        assert self.kind in ("sms", "whatsapp")
+    def phone_number(self):
+        assert self.kind in ("call", "sms", "whatsapp")
         if self.value.startswith("{"):
             doc = json.loads(self.value)
             return doc["value"]
@@ -726,20 +750,30 @@ class Channel(models.Model):
         doc = json.loads(self.value)
         return doc["to"]
 
+    @property
+    def linenotify_token(self):
+        assert self.kind == "linenotify"
+        if not self.value.startswith("{"):
+            return self.value
+
+        doc = json.loads(self.value)
+        return doc["token"]
+
 
 class Notification(models.Model):
     class Meta:
         get_latest_by = "created"
 
     code = models.UUIDField(default=uuid.uuid4, null=True, editable=False)
-    owner = models.ForeignKey(Check, models.CASCADE)
+    owner = models.ForeignKey(Check, models.CASCADE, null=True)
     check_status = models.CharField(max_length=6)
     channel = models.ForeignKey(Channel, models.CASCADE)
     created = models.DateTimeField(auto_now_add=True)
     error = models.CharField(max_length=200, blank=True)
 
-    def bounce_url(self):
-        return settings.SITE_ROOT + reverse("hc-api-bounce", args=[self.code])
+    def status_url(self):
+        path = reverse("hc-api-notification-status", args=[self.code])
+        return settings.SITE_ROOT + path
 
 
 class Flip(models.Model):

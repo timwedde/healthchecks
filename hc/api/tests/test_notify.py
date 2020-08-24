@@ -60,6 +60,8 @@ class NotifyTestCase(BaseTestCase):
 
         n = Notification.objects.get()
         self.assertEqual(n.error, "Connection timed out")
+
+        self.channel.refresh_from_db()
         self.assertEqual(self.channel.last_error, "Connection timed out")
 
     @patch("hc.api.transports.requests.request", side_effect=ConnectionError)
@@ -312,7 +314,7 @@ class NotifyTestCase(BaseTestCase):
 
         email = mail.outbox[0]
         self.assertEqual(email.to[0], "alice@example.org")
-        self.assertTrue("X-Bounce-Url" in email.extra_headers)
+        self.assertTrue("X-Status-Url" in email.extra_headers)
         self.assertTrue("List-Unsubscribe" in email.extra_headers)
         self.assertTrue("List-Unsubscribe-Post" in email.extra_headers)
 
@@ -327,14 +329,13 @@ class NotifyTestCase(BaseTestCase):
         email = mail.outbox[0]
         self.assertEqual(email.to[0], "alice@example.org")
 
-    def test_it_skips_unverified_email(self):
+    def test_it_reports_unverified_email(self):
         self._setup_data("email", "alice@example.org", email_verified=False)
         self.channel.notify(self.check)
 
-        # If an email is not verified, it should be skipped over
-        # without logging a notification:
-        self.assertEqual(Notification.objects.count(), 0)
-        self.assertEqual(len(mail.outbox), 0)
+        # If an email is not verified, it should say so in the notification:
+        n = Notification.objects.get()
+        self.assertEqual(n.error, "Email not verified")
 
     def test_email_checks_up_down_flags(self):
         payload = {"value": "alice@example.org", "up": True, "down": False}
@@ -571,6 +572,22 @@ class NotifyTestCase(BaseTestCase):
         self.assertEqual(fields["Last Ping"], "an hour ago")
 
     @patch("hc.api.transports.requests.request")
+    def test_discord_rewrites_discordapp_com(self, mock_post):
+        v = json.dumps({"webhook": {"url": "https://discordapp.com/foo"}})
+        self._setup_data("discord", v)
+        mock_post.return_value.status_code = 200
+
+        self.channel.notify(self.check)
+        assert Notification.objects.count() == 1
+
+        args, kwargs = mock_post.call_args
+        url = args[1]
+
+        # discordapp.com is deprecated. For existing webhook URLs, wwe should
+        # rewrite discordapp.com to discord.com:
+        self.assertEqual(url, "https://discord.com/foo/slack")
+
+    @patch("hc.api.transports.requests.request")
     def test_pushbullet(self, mock_post):
         self._setup_data("pushbullet", "fake-token")
         mock_post.return_value.status_code = 200
@@ -623,12 +640,16 @@ class NotifyTestCase(BaseTestCase):
         mock_post.return_value.status_code = 200
 
         self.channel.notify(self.check)
-        self.assertEqual(Notification.objects.count(), 1)
+
+        n = Notification.objects.get()
 
         args, kwargs = mock_post.call_args
         payload = kwargs["data"]
         self.assertEqual(payload["To"], "+1234567890")
         self.assertFalse("\xa0" in payload["Body"])
+
+        callback_path = f"/api/v1/notifications/{n.code}/status"
+        self.assertTrue(payload["StatusCallback"].endswith(callback_path))
 
         # sent SMS counter should go up
         self.profile.refresh_from_db()
@@ -694,11 +715,14 @@ class NotifyTestCase(BaseTestCase):
         mock_post.return_value.status_code = 200
 
         self.channel.notify(self.check)
-        self.assertEqual(Notification.objects.count(), 1)
 
         args, kwargs = mock_post.call_args
         payload = kwargs["data"]
         self.assertEqual(payload["To"], "whatsapp:+1234567890")
+
+        n = Notification.objects.get()
+        callback_path = f"/api/v1/notifications/{n.code}/status"
+        self.assertTrue(payload["StatusCallback"].endswith(callback_path))
 
         # sent SMS counter should go up
         self.profile.refresh_from_db()
@@ -738,6 +762,63 @@ class NotifyTestCase(BaseTestCase):
         email = mail.outbox[0]
         self.assertEqual(email.to[0], "alice@example.org")
         self.assertEqual(email.subject, "Monthly WhatsApp Limit Reached")
+
+    @patch("hc.api.transports.requests.request")
+    def test_call(self, mock_post):
+        self.profile.call_limit = 1
+        self.profile.save()
+
+        value = {"label": "foo", "value": "+1234567890"}
+        self._setup_data("call", json.dumps(value))
+        self.check.last_ping = now() - td(hours=2)
+
+        mock_post.return_value.status_code = 200
+
+        self.channel.notify(self.check)
+
+        args, kwargs = mock_post.call_args
+        payload = kwargs["data"]
+        self.assertEqual(payload["To"], "+1234567890")
+
+        n = Notification.objects.get()
+        callback_path = f"/api/v1/notifications/{n.code}/status"
+        self.assertTrue(payload["StatusCallback"].endswith(callback_path))
+
+    @patch("hc.api.transports.requests.request")
+    def test_call_limit(self, mock_post):
+        # At limit already:
+        self.profile.last_call_date = now()
+        self.profile.calls_sent = 50
+        self.profile.save()
+
+        definition = {"value": "+1234567890"}
+        self._setup_data("call", json.dumps(definition))
+
+        self.channel.notify(self.check)
+        self.assertFalse(mock_post.called)
+
+        n = Notification.objects.get()
+        self.assertTrue("Monthly phone call limit exceeded" in n.error)
+
+        # And email should have been sent
+        self.assertEqual(len(mail.outbox), 1)
+
+        email = mail.outbox[0]
+        self.assertEqual(email.to[0], "alice@example.org")
+        self.assertEqual(email.subject, "Monthly Phone Call Limit Reached")
+
+    @patch("hc.api.transports.requests.request")
+    def test_call_limit_reset(self, mock_post):
+        # At limit, but also into a new month
+        self.profile.calls_sent = 50
+        self.profile.last_call_date = now() - td(days=100)
+        self.profile.save()
+
+        self._setup_data("sms", "+1234567890")
+        mock_post.return_value.status_code = 200
+
+        self.channel.notify(self.check)
+        self.assertTrue(mock_post.called)
 
     @patch("apprise.Apprise")
     @override_settings(APPRISE_ENABLED=True)

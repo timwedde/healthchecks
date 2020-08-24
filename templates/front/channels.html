@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load compress humanize static hc_extras %}
 
-{% block title %}Integrations - {% site_name %}{% endblock %}
+{% block title %}Integrations - {{ site_name }}{% endblock %}
 
 
 {% block content %}
@@ -67,7 +67,9 @@
                                 user <span>{{ ch.telegram_name }}</span>
                             {% endif %}
                         {% elif ch.kind == "sms" %}
-                            SMS to <span>{{ ch.sms_number }}</span>
+                            SMS to <span>{{ ch.phone_number }}</span>
+                        {% elif ch.kind == "call" %}
+                            Phone call to <span>{{ ch.phone_number }}</span>
                         {% elif ch.kind == "trello" %}
                             Trello
                             board <span>{{ ch.trello_board_list|first }}</span>,
@@ -75,7 +77,7 @@
                         {% elif ch.kind == "matrix" %}
                             Matrix <span>{{ ch.value }}</span>
                         {% elif ch.kind == "whatsapp" %}
-                            WhatsApp to <span>{{ ch.sms_number }}</span>
+                            WhatsApp to <span>{{ ch.phone_number }}</span>
                             {% if ch.whatsapp_notify_down and not ch.whatsapp_notify_up %}
                                 (down only)
                             {% endif %}
@@ -103,11 +105,7 @@
             </td>
             <td>
                 {% if ch.kind == "email" and not ch.email_verified %}
-                    {% if n and n.error %}
-                        <span class="label label-danger">Disabled</span>
-                    {% else %}
-                        <span class="label label-default">Unconfirmed</span>
-                    {% endif %}
+                    <span class="label label-default">Unconfirmed</span>
                 {% elif ch.kind == "hipchat" or ch.kind == "pagerteam" %}
                     Retired
                 {% else %}
@@ -128,6 +126,9 @@
                 {% endif %}
                 {% if ch.kind == "sms" or ch.kind == "whatsapp" %}
                     <p>Used {{ profile.sms_sent_this_month }} of {{ profile.sms_limit }} sends this month.</p>
+                {% endif %}
+                {% if ch.kind == "call" %}
+                    <p>Used {{ profile.calls_sent_this_month }} of {{ profile.call_limit }} phone calls this month.</p>
                 {% endif %}
             </td>
             <td class="actions">
@@ -164,7 +165,7 @@
             <p> The project "{{ project }}" does not have any integrations
                 set up yet.
             </p>
-            <p>With no configured integrations, {% site_name %}
+            <p>With no configured integrations, {{ site_name }}
                 <strong>will not send any notifications</strong>
                 when checks change state.
             </p>
@@ -203,6 +204,7 @@
             <p>Receive a HTTP callback when a check goes down.</p>
             <a href="{% url 'hc-add-webhook' project.code %}" class="btn btn-primary">Add Integration</a>
         </li>
+
         {% if enable_apprise %}
         <li>
             <img src="{% static 'img/integrations/apprise.png' %}"
@@ -224,6 +226,15 @@
             <a href="{% url 'hc-add-discord' project.code %}" class="btn btn-primary">Add Integration</a>
         </li>
         {% endif %}
+
+        <li>
+            <img src="{% static 'img/integrations/linenotify.png' %}"
+                class="icon" alt="LINE Notify icon" />
+
+            <h2>LINE Notify</h2>
+            <p>Receive a notification on LINE when a check goes up or down.</p>
+            <a href="{% url 'hc-add-linenotify' project.code %}" class="btn btn-primary">Add Integration</a>
+        </li>
 
         {% if enable_matrix %}
         <li>
@@ -282,9 +293,20 @@
                 class="icon" alt="PagerTree icon" />
 
             <h2>PagerTree</h2>
-            <p>DevOps Incident Management - On-Call Schedules, Alerts, &amp; Notifications</p>
+            <p>DevOps Incident Management - On-Call Schedules, Alerts, &amp; Notifications.</p>
             <a href="{% url 'hc-add-pagertree' project.code %}" class="btn btn-primary">Add Integration</a>
         </li>
+
+        {% if enable_call %}
+        <li>
+            <img src="{% static 'img/integrations/call.png' %}"
+                class="icon" alt="Phone icon" />
+
+            <h2>Phone Call</h2>
+            <p>Get a phone call when a check goes down.</p>
+            <a href="{% url 'hc-add-call' project.code %}" class="btn btn-primary">Add Integration</a>
+        </li>
+        {% endif %}
 
         <li>
             <img src="{% static 'img/integrations/prometheus.png' %}"
@@ -338,6 +360,15 @@
             <a href="{% url 'hc-add-sms' project.code %}" class="btn btn-primary">Add Integration</a>
         </li>
         {% endif %}
+
+        <li>
+            <img src="{% static 'img/integrations/spike.png' %}" class="icon" alt="Spike.sh icon" />
+
+            <h2>Spike.sh</h2>
+            <p>Incident management with unlimited alerts and on-call schedules.</p>
+
+                <a href="{% url 'hc-add-spike' project.code %}" class="btn btn-primary">Add Integration</a>
+        </li>
 
         {% if enable_telegram %}
         <li>
