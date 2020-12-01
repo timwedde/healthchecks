@@ -1,5 +1,8 @@
+import base64
 from datetime import timedelta as td
+from secrets import token_bytes
 from urllib.parse import urlparse
+import time
 import uuid
 
 from django.db import transaction
@@ -7,39 +10,43 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core import signing
-from django.http import (
-    HttpResponseForbidden,
-    HttpResponseBadRequest,
-    HttpResponseNotFound,
-)
+from django.http import HttpResponse, HttpResponseForbidden, HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.timezone import now
-from django.urls import resolve, Resolver404
+from django.urls import resolve, reverse, Resolver404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from fido2.ctap2 import AttestationObject, AuthenticatorData
+from fido2.client import ClientData
+from fido2.server import Fido2Server
+from fido2.webauthn import PublicKeyCredentialRpEntity
+from fido2 import cbor
 from hc.accounts import forms
-from hc.accounts.models import Profile, Project, Member
+from hc.accounts.decorators import require_sudo_mode
+from hc.accounts.models import Credential, Profile, Project, Member
 from hc.api.models import Channel, Check, TokenBucket
 from hc.lib.date import choose_next_report_date
 from hc.payments.models import Subscription
 
-NEXT_WHITELIST = (
+POST_LOGIN_ROUTES = (
     "hc-checks",
     "hc-details",
     "hc-log",
-    "hc-p-channels",
+    "hc-channels",
     "hc-add-slack",
     "hc-add-pushover",
     "hc-add-telegram",
     "hc-project-settings",
 )
 
+FIDO2_SERVER = Fido2Server(PublicKeyCredentialRpEntity(settings.RP_ID, "healthchecks"))
 
-def _is_whitelisted(redirect_url):
+
+def _allow_redirect(redirect_url):
     if not redirect_url:
         return False
 
@@ -49,7 +56,7 @@ def _is_whitelisted(redirect_url):
     except Resolver404:
         return False
 
-    return match.url_name in NEXT_WHITELIST
+    return match.url_name in POST_LOGIN_ROUTES
 
 
 def _make_user(email, with_project=True):
@@ -86,7 +93,7 @@ def _redirect_after_login(request):
     """ Redirect to the URL indicated in ?next= query parameter. """
 
     redirect_url = request.GET.get("next")
-    if _is_whitelisted(redirect_url):
+    if _allow_redirect(redirect_url):
         return redirect(redirect_url)
 
     if request.user.project_set.count() == 1:
@@ -94,6 +101,26 @@ def _redirect_after_login(request):
         return redirect("hc-checks", project.code)
 
     return redirect("hc-index")
+
+
+def _check_2fa(request, user):
+    if user.credentials.exists():
+        # We have verified user's password or token, and now must
+        # verify their security key. We store the following in user's session:
+        # - user.id, to look up the user in the login_webauthn view
+        # - user.email, to make sure email was not changed between the auth steps
+        # - timestamp, to limit the max time between the auth steps
+        request.session["2fa_user"] = [user.id, user.email, int(time.time())]
+
+        path = reverse("hc-login-webauthn")
+        redirect_url = request.GET.get("next")
+        if _allow_redirect(redirect_url):
+            path += "?next=%s" % redirect_url
+
+        return redirect(path)
+
+    auth_login(request, user)
+    return _redirect_after_login(request)
 
 
 def login(request):
@@ -104,14 +131,13 @@ def login(request):
         if request.POST.get("action") == "login":
             form = forms.PasswordLoginForm(request.POST)
             if form.is_valid():
-                auth_login(request, form.user)
-                return _redirect_after_login(request)
+                return _check_2fa(request, form.user)
 
         else:
             magic_form = forms.EmailLoginForm(request.POST)
             if magic_form.is_valid():
                 redirect_url = request.GET.get("next")
-                if not _is_whitelisted(redirect_url):
+                if not _allow_redirect(redirect_url):
                     redirect_url = None
 
                 profile = Profile.objects.for_user(magic_form.user)
@@ -167,10 +193,6 @@ def login_link_sent(request):
     return render(request, "accounts/login_link_sent.html")
 
 
-def link_sent(request):
-    return render(request, "accounts/link_sent.html")
-
-
 def check_token(request, username, token):
     if request.user.is_authenticated and request.user.username == username:
         # User is already logged in
@@ -180,17 +202,15 @@ def check_token(request, username, token):
     # To work around this, we sign user in if the method is POST
     # *or* if the browser presents a cookie we had set when sending the login link.
     #
-    # If the method is GET, we instead serve a HTML form and a piece
-    # of Javascript to automatically submit it.
+    # If the method is GET and the auto-login cookie isn't present, we serve
+    # a HTML form with a submit button.
 
     if request.method == "POST" or "auto-login" in request.COOKIES:
         user = authenticate(username=username, token=token)
         if user is not None and user.is_active:
             user.profile.token = ""
             user.profile.save()
-            auth_login(request, user)
-
-            return _redirect_after_login(request)
+            return _check_2fa(request, user)
 
         request.session["bad_link"] = True
         return redirect("hc-login")
@@ -202,30 +222,39 @@ def check_token(request, username, token):
 def profile(request):
     profile = request.profile
 
-    ctx = {"page": "profile", "profile": profile, "my_projects_status": "default"}
+    ctx = {
+        "page": "profile",
+        "profile": profile,
+        "my_projects_status": "default",
+        "2fa_status": "default",
+        "added_credential_name": request.session.pop("added_credential_name", ""),
+        "removed_credential_name": request.session.pop("removed_credential_name", ""),
+        "credentials": list(request.user.credentials.order_by("id")),
+        "use_2fa": settings.RP_ID,
+    }
 
-    if request.method == "POST":
-        if "change_email" in request.POST:
-            profile.send_change_email_link()
-            return redirect("hc-link-sent")
-        elif "set_password" in request.POST:
-            profile.send_set_password_link()
-            return redirect("hc-link-sent")
-        elif "leave_project" in request.POST:
-            code = request.POST["code"]
-            try:
-                project = Project.objects.get(code=code, member__user=request.user)
-            except Project.DoesNotExist:
-                return HttpResponseBadRequest()
+    if ctx["added_credential_name"]:
+        ctx["2fa_status"] = "success"
 
-            Member.objects.filter(project=project, user=request.user).delete()
+    if ctx["removed_credential_name"]:
+        ctx["2fa_status"] = "info"
 
-            ctx["left_project"] = project
-            ctx["my_projects_status"] = "info"
+    if request.session.pop("changed_password", False):
+        ctx["changed_password"] = True
+        ctx["email_password_status"] = "success"
 
-    # Retrieve projects right before rendering the template--
-    # The list of the projects might have *just* changed
-    ctx["projects"] = list(profile.projects())
+    if request.method == "POST" and "leave_project" in request.POST:
+        code = request.POST["code"]
+        try:
+            project = Project.objects.get(code=code, member__user=request.user)
+        except Project.DoesNotExist:
+            return HttpResponseBadRequest()
+
+        Member.objects.filter(project=project, user=request.user).delete()
+
+        ctx["left_project"] = project
+        ctx["my_projects_status"] = "info"
+
     return render(request, "accounts/profile.html", ctx)
 
 
@@ -246,25 +275,27 @@ def add_project(request):
 
 @login_required
 def project(request, code):
-    if request.user.is_superuser:
-        q = Project.objects
-    else:
-        q = request.profile.projects()
-
-    try:
-        project = q.get(code=code)
-    except Project.DoesNotExist:
-        return HttpResponseNotFound()
-
+    project = get_object_or_404(Project, code=code)
     is_owner = project.owner_id == request.user.id
+
+    if request.user.is_superuser or is_owner:
+        rw = True
+    else:
+        membership = get_object_or_404(Member, project=project, user=request.user)
+        rw = membership.rw
+
     ctx = {
         "page": "project",
+        "rw": rw,
         "project": project,
         "is_owner": is_owner,
         "show_api_keys": "show_api_keys" in request.GET,
     }
 
     if request.method == "POST":
+        if not rw:
+            return HttpResponseForbidden()
+
         if "create_api_keys" in request.POST:
             project.set_api_keys()
             project.save()
@@ -304,7 +335,7 @@ def project(request, code):
                 except User.DoesNotExist:
                     user = _make_user(email, with_project=False)
 
-                if project.invite(user):
+                if project.invite(user, rw=form.cleaned_data["rw"]):
                     ctx["team_member_invited"] = email
                     ctx["team_status"] = "success"
                 else:
@@ -436,10 +467,8 @@ def notifications(request):
 
 
 @login_required
-def set_password(request, token):
-    if not request.profile.check_token(token, "set-password"):
-        return HttpResponseBadRequest()
-
+@require_sudo_mode
+def set_password(request):
     if request.method == "POST":
         form = forms.SetPasswordForm(request.POST)
         if form.is_valid():
@@ -450,22 +479,19 @@ def set_password(request, token):
             request.profile.token = ""
             request.profile.save()
 
-            # Setting a password logs the user out, so here we
-            # log them back in.
-            u = authenticate(username=request.user.email, password=password)
-            auth_login(request, u)
+            # update the session with the new password hash so that
+            # the user doesn't  get logged out
+            update_session_auth_hash(request, request.user)
 
-            messages.success(request, "Your password has been set!")
+            request.session["changed_password"] = True
             return redirect("hc-profile")
 
     return render(request, "accounts/set_password.html", {})
 
 
 @login_required
-def change_email(request, token):
-    if not request.profile.check_token(token, "change-email"):
-        return HttpResponseBadRequest()
-
+@require_sudo_mode
+def change_email(request):
     if request.method == "POST":
         form = forms.ChangeEmailForm(request.POST)
         if form.is_valid():
@@ -522,22 +548,29 @@ def unsubscribe_reports(request, signed_username):
     return render(request, "accounts/unsubscribed.html")
 
 
-@require_POST
 @login_required
+@require_sudo_mode
 def close(request):
     user = request.user
 
-    # Cancel their subscription:
-    sub = Subscription.objects.filter(user=user).first()
-    if sub:
-        sub.cancel()
+    if request.method == "POST":
+        if request.POST.get("confirmation") == request.user.email:
+            # Cancel their subscription:
+            sub = Subscription.objects.filter(user=user).first()
+            if sub:
+                sub.cancel()
 
-    user.delete()
+            # Deleting user also deletes its profile, checks, channels etc.
+            user.delete()
 
-    # Deleting user also deletes its profile, checks, channels etc.
+            request.session.flush()
+            return redirect("hc-index")
 
-    request.session.flush()
-    return redirect("hc-index")
+    ctx = {}
+    if "confirmation" in request.POST:
+        ctx["wrong_confirmation"] = True
+
+    return render(request, "accounts/close_account.html", ctx)
 
 
 @require_POST
@@ -546,3 +579,160 @@ def remove_project(request, code):
     project = get_object_or_404(Project, code=code, owner=request.user)
     project.delete()
     return redirect("hc-index")
+
+
+def _get_credential_data(request, form):
+    """ Complete WebAuthn registration, return binary credential data.
+
+    This function is an interface to the fido2 library. It is separated
+    out so that we don't need to mock ClientData, AttestationObject,
+    register_complete separately in tests.
+
+    """
+
+    try:
+        auth_data = FIDO2_SERVER.register_complete(
+            request.session["state"],
+            ClientData(form.cleaned_data["client_data_json"]),
+            AttestationObject(form.cleaned_data["attestation_object"]),
+        )
+    except ValueError:
+        return None
+
+    return auth_data.credential_data
+
+
+@login_required
+@require_sudo_mode
+def add_credential(request):
+    if not settings.RP_ID:
+        return HttpResponse(status=404)
+
+    if request.method == "POST":
+        form = forms.AddCredentialForm(request.POST)
+        if not form.is_valid():
+            return HttpResponseBadRequest()
+
+        credential_data = _get_credential_data(request, form)
+        if not credential_data:
+            return HttpResponseBadRequest()
+
+        c = Credential(user=request.user)
+        c.name = form.cleaned_data["name"]
+        c.data = credential_data
+        c.save()
+
+        request.session["added_credential_name"] = c.name
+        return redirect("hc-profile")
+
+    credentials = [c.unpack() for c in request.user.credentials.all()]
+    # User handle is used in a username-less authentication, to map a credential
+    # received from browser with an user account in the database.
+    # Since we only use security keys as a second factor,
+    # the user handle is not of much use to us.
+    #
+    # The user handle:
+    #  - must not be blank,
+    #  - must not be a constant value,
+    #  - must not contain personally identifiable information.
+    # So we use random bytes, and don't store them on our end:
+    options, state = FIDO2_SERVER.register_begin(
+        {
+            "id": token_bytes(16),
+            "name": request.user.email,
+            "displayName": request.user.email,
+        },
+        credentials,
+    )
+
+    request.session["state"] = state
+
+    ctx = {"options": base64.b64encode(cbor.encode(options)).decode()}
+    return render(request, "accounts/add_credential.html", ctx)
+
+
+@login_required
+@require_sudo_mode
+def remove_credential(request, code):
+    if not settings.RP_ID:
+        return HttpResponse(status=404)
+
+    try:
+        credential = Credential.objects.get(user=request.user, code=code)
+    except Credential.DoesNotExist:
+        return HttpResponseBadRequest()
+
+    if request.method == "POST" and "remove_credential" in request.POST:
+        request.session["removed_credential_name"] = credential.name
+        credential.delete()
+        return redirect("hc-profile")
+
+    ctx = {"credential": credential, "is_last": request.user.credentials.count() == 1}
+    return render(request, "accounts/remove_credential.html", ctx)
+
+
+def _check_credential(request, form, credentials):
+    """ Complete WebAuthn authentication, return True on success.
+
+    This function is an interface to the fido2 library. It is separated
+    out so that we don't need to mock ClientData, AuthenticatorData,
+    authenticate_complete separately in tests.
+
+    """
+
+    try:
+        FIDO2_SERVER.authenticate_complete(
+            request.session["state"],
+            credentials,
+            form.cleaned_data["credential_id"],
+            ClientData(form.cleaned_data["client_data_json"]),
+            AuthenticatorData(form.cleaned_data["authenticator_data"]),
+            form.cleaned_data["signature"],
+        )
+    except ValueError:
+        return False
+
+    return True
+
+
+def login_webauthn(request):
+    # We require RP_ID. Fail predicably if it is not set:
+    if not settings.RP_ID:
+        return HttpResponse(status=500)
+
+    # Expect an unauthenticated user
+    if request.user.is_authenticated:
+        return HttpResponseBadRequest()
+
+    if "2fa_user" not in request.session:
+        return HttpResponseBadRequest()
+
+    user_id, email, timestamp = request.session["2fa_user"]
+    if timestamp + 300 < time.time():
+        return redirect("hc-login")
+
+    try:
+        user = User.objects.get(id=user_id, email=email)
+    except User.DoesNotExist:
+        return HttpResponseBadRequest()
+
+    credentials = [c.unpack() for c in user.credentials.all()]
+
+    if request.method == "POST":
+        form = forms.WebAuthnForm(request.POST)
+        if not form.is_valid():
+            return HttpResponseBadRequest()
+
+        if not _check_credential(request, form, credentials):
+            return HttpResponseBadRequest()
+
+        request.session.pop("state")
+        request.session.pop("2fa_user")
+        auth_login(request, user, "hc.accounts.backends.EmailBackend")
+        return _redirect_after_login(request)
+
+    options, state = FIDO2_SERVER.authenticate_begin(credentials)
+    request.session["state"] = state
+
+    ctx = {"options": base64.b64encode(cbor.encode(options)).decode()}
+    return render(request, "accounts/login_webauthn.html", ctx)

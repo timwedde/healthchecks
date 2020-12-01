@@ -4,7 +4,7 @@ from hc.test import BaseTestCase
 
 class AddZulipTestCase(BaseTestCase):
     def setUp(self):
-        super(AddZulipTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_zulip/" % self.project.code
 
     def test_instructions_work(self):
@@ -78,3 +78,11 @@ class AddZulipTestCase(BaseTestCase):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.post(self.url, form)
         self.assertContains(r, "This field is required.")
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)

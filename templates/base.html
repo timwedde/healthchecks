@@ -20,9 +20,11 @@
     <link rel="stylesheet" href="{% static 'css/bootstrap-select.min.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/selectize.hc.css' %}" type="text/css">
 
+    <link rel="stylesheet" href="{% static 'css/add_credential.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/add_project_modal.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/add_pushover.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/webhook_form.css' %}" type="text/css">
+    <link rel="stylesheet" href="{% static 'css/badges.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/base.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/billing.css' %}" type="text/css">
     <link rel="stylesheet" href="{% static 'css/channel_checks.css' %}" type="text/css">
@@ -102,7 +104,7 @@
 
                     {% with b=project.have_channel_issues %}
                     <li {% if b %}id="broken-channels"{% endif %} {% if page == 'channels' %}class="active"{% endif %}>
-                        <a href="{% url 'hc-p-channels' project.code %}">
+                        <a href="{% url 'hc-channels' project.code %}">
                             {% trans "Integrations" %}
                             {% if b %}<span class="icon-grace"></span>{% endif %}
                         </a>

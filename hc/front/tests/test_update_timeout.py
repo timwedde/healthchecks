@@ -7,7 +7,7 @@ from hc.test import BaseTestCase
 
 class UpdateTimeoutTestCase(BaseTestCase):
     def setUp(self):
-        super(UpdateTimeoutTestCase, self).setUp()
+        super().setUp()
         self.check = Check(project=self.project, status="up")
         self.check.last_ping = timezone.now()
         self.check.save()
@@ -180,3 +180,13 @@ class UpdateTimeoutTestCase(BaseTestCase):
         self.client.login(username="bob@example.org", password="password")
         r = self.client.post(self.url, data=payload)
         self.assertRedirects(r, self.redirect_url)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        payload = {"kind": "simple", "timeout": 3600, "grace": 60}
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.post(self.url, data=payload)
+        self.assertEqual(r.status_code, 403)

@@ -6,7 +6,7 @@ from hc.test import BaseTestCase
 @override_settings(TWILIO_ACCOUNT="foo", TWILIO_AUTH="foo", TWILIO_FROM="123")
 class AddCallTestCase(BaseTestCase):
     def setUp(self):
-        super(AddCallTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_call/" % self.project.code
 
     def test_instructions_work(self):
@@ -57,3 +57,11 @@ class AddCallTestCase(BaseTestCase):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url)
         self.assertEqual(r.status_code, 404)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)

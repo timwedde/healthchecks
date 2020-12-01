@@ -9,7 +9,7 @@ from hc.api.models import TokenBucket
 
 class ProjectTestCase(BaseTestCase):
     def setUp(self):
-        super(ProjectTestCase, self).setUp()
+        super().setUp()
 
         self.url = "/projects/%s/settings/" % self.project.code
 
@@ -65,7 +65,7 @@ class ProjectTestCase(BaseTestCase):
     def test_it_adds_team_member(self):
         self.client.login(username="alice@example.org", password="password")
 
-        form = {"invite_team_member": "1", "email": "frank@example.org"}
+        form = {"invite_team_member": "1", "email": "frank@example.org", "rw": "1"}
         r = self.client.post(self.url, form)
         self.assertEqual(r.status_code, 200)
 
@@ -76,15 +76,29 @@ class ProjectTestCase(BaseTestCase):
             project=self.project, user__email="frank@example.org"
         )
 
+        # The read-write flag should be set
+        self.assertTrue(member.rw)
+
         # The new user should not have their own project
         self.assertFalse(member.user.project_set.exists())
 
         # And an email should have been sent
-        subj = (
-            "You have been invited to join"
-            " Alice's Project on %s" % settings.SITE_NAME
-        )
+        subj = f"You have been invited to join Alices Project on {settings.SITE_NAME}"
         self.assertHTMLEqual(mail.outbox[0].subject, subj)
+
+    def test_it_adds_readonly_team_member(self):
+        self.client.login(username="alice@example.org", password="password")
+
+        form = {"invite_team_member": "1", "email": "frank@example.org"}
+        r = self.client.post(self.url, form)
+        self.assertEqual(r.status_code, 200)
+
+        member = Member.objects.get(
+            project=self.project, user__email="frank@example.org"
+        )
+
+        # The new user should not have their own project
+        self.assertFalse(member.rw)
 
     def test_it_adds_member_from_another_team(self):
         # With team limit at zero, we should not be able to invite any new users
@@ -212,3 +226,23 @@ class ProjectTestCase(BaseTestCase):
         r = self.client.get("/projects/%s/settings/" % p2.code)
         self.assertContains(r, "Add Users from Other Teams")
         self.assertContains(r, "bob@example.org")
+
+    def test_it_checks_rw_access_when_updating_project_name(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+
+        form = {"set_project_name": "1", "name": "Alpha Team"}
+        r = self.client.post(self.url, form)
+        self.assertEqual(r.status_code, 403)
+
+    def test_it_hides_actions_for_readonly_users(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+
+        r = self.client.get(self.url)
+        self.assertNotContains(r, "#set-project-name-modal", status_code=200)
+        self.assertNotContains(r, "Show API Keys")

@@ -1,6 +1,6 @@
 # Healthchecks
 
-[![Build Status](https://travis-ci.org/healthchecks/healthchecks.svg?branch=master)](https://travis-ci.org/healthchecks/healthchecks)
+![Build Status](https://github.com/healthchecks/healthchecks/workflows/Django%20CI/badge.svg)
 [![Coverage Status](https://coveralls.io/repos/healthchecks/healthchecks/badge.svg?branch=master&service=github)](https://coveralls.io/github/healthchecks/healthchecks?branch=master)
 
 
@@ -76,66 +76,74 @@ visit `http://localhost:8000/admin`
 
 ## Configuration
 
-Site configuration is loaded from environment variables. This is
-done in `hc/settings.py`. Additional configuration is loaded
-from `hc/local_settings.py` file, if it exists. You can create this file
-(should be right next to `settings.py` in the filesystem) and override
-settings, or add extra settings as needed.
+Healthchecks prepares its configuration in `hc/settings.py`. It reads configuration
+from two places:
 
-Configurations settings loaded from environment variables:
+ * environment variables (see the variable names in the table below)
+ * it imports configuration for `hc/local_settings.py` file, if it exists
+
+You can use either mechanism, depending on what is more convenient. Using
+`hc/local_settings.py` allows more flexibility: you can set
+each and every [Django setting](https://docs.djangoproject.com/en/3.1/ref/settings/),
+you can run Python code to load configuration from an external source.
+
+Healthchecks reads configuration from the following environment variables:
 
 | Environment variable | Default value | Notes
 | -------------------- | ------------- | ----- |
-| [SECRET_KEY](https://docs.djangoproject.com/en/2.2/ref/settings/#secret-key) | `"---"`
-| [DEBUG](https://docs.djangoproject.com/en/2.2/ref/settings/#debug) | `True` | Set to `False` for production
-| [ALLOWED_HOSTS](https://docs.djangoproject.com/en/2.2/ref/settings/#allowed-hosts) | `*` | Separate multiple hosts with commas
-| [DEFAULT_FROM_EMAIL](https://docs.djangoproject.com/en/2.2/ref/settings/#default-from-email) | `"healthchecks@example.org"`
+| [SECRET_KEY](https://docs.djangoproject.com/en/3.1/ref/settings/#secret-key) | `"---"`
+| [DEBUG](https://docs.djangoproject.com/en/3.1/ref/settings/#debug) | `True` | Set to `False` for production
+| [ALLOWED_HOSTS](https://docs.djangoproject.com/en/3.1/ref/settings/#allowed-hosts) | `*` | Separate multiple hosts with commas
+| [DEFAULT_FROM_EMAIL](https://docs.djangoproject.com/en/3.1/ref/settings/#default-from-email) | `"healthchecks@example.org"`
 | USE_PAYMENTS | `False`
 | REGISTRATION_OPEN | `True`
 | DB | `"sqlite"` | Set to `"postgres"` or `"mysql"`
-| [DB_HOST](https://docs.djangoproject.com/en/2.2/ref/settings/#host) | `""` *(empty string)*
-| [DB_PORT](https://docs.djangoproject.com/en/2.2/ref/settings/#port) | `""` *(empty string)*
-| [DB_NAME](https://docs.djangoproject.com/en/2.2/ref/settings/#name) | `"hc"` (PostgreSQL, MySQL) or `"/path/to/project/hc.sqlite"` (SQLite) | For SQLite, specify the full path to the database file.
-| [DB_USER](https://docs.djangoproject.com/en/2.2/ref/settings/#user) | `"postgres"` or `"root"`
-| [DB_PASSWORD](https://docs.djangoproject.com/en/2.2/ref/settings/#password) | `""` *(empty string)*
-| [DB_CONN_MAX_AGE](https://docs.djangoproject.com/en/2.2/ref/settings/#conn-max-age) | `0`
+| [DB_HOST](https://docs.djangoproject.com/en/3.1/ref/settings/#host) | `""` *(empty string)*
+| [DB_PORT](https://docs.djangoproject.com/en/3.1/ref/settings/#port) | `""` *(empty string)*
+| [DB_NAME](https://docs.djangoproject.com/en/3.1/ref/settings/#name) | `"hc"` (PostgreSQL, MySQL) or `"/path/to/project/hc.sqlite"` (SQLite) | For SQLite, specify the full path to the database file.
+| [DB_USER](https://docs.djangoproject.com/en/3.1/ref/settings/#user) | `"postgres"` or `"root"`
+| [DB_PASSWORD](https://docs.djangoproject.com/en/3.1/ref/settings/#password) | `""` *(empty string)*
+| [DB_CONN_MAX_AGE](https://docs.djangoproject.com/en/3.1/ref/settings/#conn-max-age) | `0`
 | DB_SSLMODE | `"prefer"` | PostgreSQL-specific, [details](https://blog.github.com/2018-10-21-october21-incident-report/)
 | DB_TARGET_SESSION_ATTRS | `"read-write"` | PostgreSQL-specific, [details](https://www.postgresql.org/docs/10/static/libpq-connect.html#LIBPQ-CONNECT-TARGET-SESSION-ATTRS)
-| EMAIL_HOST | `""` *(empty string)*
-| EMAIL_PORT | `"587"`
-| EMAIL_HOST_USER | `""` *(empty string)*
-| EMAIL_HOST_PASSWORD | `""` *(empty string)*
-| EMAIL_USE_TLS | `"True"`
-| EMAIL_USE_VERIFICATION | `"True"`
+| [EMAIL_HOST](https://docs.djangoproject.com/en/3.1/ref/settings/#email-host) | `""` *(empty string)*
+| [EMAIL_PORT](https://docs.djangoproject.com/en/3.1/ref/settings/#email-port) | `"587"`
+| [EMAIL_HOST_USER](https://docs.djangoproject.com/en/3.1/ref/settings/#email-host-user) | `""` *(empty string)*
+| [EMAIL_HOST_PASSWORD](https://docs.djangoproject.com/en/3.1/ref/settings/#email-host-password) | `""` *(empty string)*
+| [EMAIL_USE_TLS](https://docs.djangoproject.com/en/3.1/ref/settings/#email-use-tls) | `"True"`
+| EMAIL_USE_VERIFICATION | `"True"` | Whether to send confirmation links when adding email integrations
 | SITE_ROOT | `"http://localhost:8000"`
 | SITE_NAME | `"Mychecks"`
+| RP_ID | `None` | Enables WebAuthn support
 | MASTER_BADGE_LABEL | `"Mychecks"`
 | PING_ENDPOINT | `"http://localhost:8000/ping/"`
 | PING_EMAIL_DOMAIN | `"localhost"`
 | PING_BODY_LIMIT | 10000 | In bytes. Set to `None` to always log full request body
+| APPRISE_ENABLED | `"False"`
 | DISCORD_CLIENT_ID | `None`
 | DISCORD_CLIENT_SECRET | `None`
-| SLACK_CLIENT_ID | `None`
-| SLACK_CLIENT_SECRET | `None`
-| PUSHOVER_API_TOKEN | `None`
-| PUSHOVER_SUBSCRIPTION_URL | `None`
-| PUSHOVER_EMERGENCY_RETRY_DELAY | `300`
-| PUSHOVER_EMERGENCY_EXPIRATION | `86400`
+| LINENOTIFY_CLIENT_ID | `None`
+| LINENOTIFY_CLIENT_SECRET | `None`
+| MATRIX_ACCESS_TOKEN | `None`
+| MATRIX_HOMESERVER | `None`
+| MATRIX_USER_ID | `None`
+| PD_VENDOR_KEY | `None`
 | PUSHBULLET_CLIENT_ID | `None`
 | PUSHBULLET_CLIENT_SECRET | `None`
+| PUSHOVER_API_TOKEN | `None`
+| PUSHOVER_EMERGENCY_EXPIRATION | `86400`
+| PUSHOVER_EMERGENCY_RETRY_DELAY | `300`
+| PUSHOVER_SUBSCRIPTION_URL | `None`
+| SHELL_ENABLED | `"False"`
+| SLACK_CLIENT_ID | `None`
+| SLACK_CLIENT_SECRET | `None`
 | TELEGRAM_BOT_NAME | `"ExampleBot"`
 | TELEGRAM_TOKEN | `None`
+| TRELLO_APP_KEY | `None`
 | TWILIO_ACCOUNT | `None`
 | TWILIO_AUTH | `None`
 | TWILIO_FROM | `None`
 | TWILIO_USE_WHATSAPP | `"False"`
-| PD_VENDOR_KEY | `None`
-| TRELLO_APP_KEY | `None`
-| MATRIX_HOMESERVER | `None`
-| MATRIX_USER_ID | `None`
-| MATRIX_ACCESS_TOKEN | `None`
-| APPRISE_ENABLED | `"False"`
-| SHELL_ENABLED | `"False"`
 
 
 Some useful settings keys to override are:
@@ -308,6 +316,19 @@ test them on a copy of your database, not on the live database right away.
 In a production setup, you should also have regular, automated database
 backups set up.
 
+## Two-factor Authentication
+
+Healthchecks optionally supports two-factor authentication using the WebAuthn
+standard. To enable WebAuthn support, set the `RP_ID` (relying party identifier )
+setting to a non-null value. Set its value to your site's domain without scheme
+and without port. For example, if your site runs on `https://my-hc.example.org`,
+set `RP_ID` to `my-hc.example.org`.
+
+Note that WebAuthn requires HTTPS, even if running on localhost. To test WebAuthn
+locally with a self-signed certificate, you can use the `runsslserver` command
+from the `django-sslserver` package.
+
+
 ## Integrations
 
 ### Slack
@@ -403,6 +424,22 @@ Note: be careful when using "Shell Commands" integration, and only enable it whe
 you fully trust the users of your Healthchecks instance. The commands will be executed
 by the `manage.py sendalerts` process, and will run with the same system permissions as
 the `sendalerts` process.
+
+### Matrix
+
+To enable the Matrix integration you will need to:
+
+* Register a bot user (for posting notifications) in your preferred homeserver.
+* Use the [Login API call](https://www.matrix.org/docs/guides/client-server-api#login)
+  to retrieve bot user's access token. You can run it as shown in the documentation,
+  using curl in command shell.
+* Set the `MATRIX_` environment variables. Example:
+
+```
+MATRIX_HOMESERVER=https://matrix.org
+MATRIX_USER_ID=@mychecks:matrix.org
+MATRIX_ACCESS_TOKEN=[a long string of characters returned by the login call]
+```
 
 ## Running in Production
 

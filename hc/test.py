@@ -1,4 +1,5 @@
 from django.contrib.auth.models import User
+from django.core.signing import TimestampSigner
 from django.test import TestCase
 
 from hc.accounts.models import Member, Profile, Project
@@ -6,7 +7,7 @@ from hc.accounts.models import Member, Profile, Project
 
 class BaseTestCase(TestCase):
     def setUp(self):
-        super(BaseTestCase, self).setUp()
+        super().setUp()
 
         # Alice is a normal user for tests. Alice has team access enabled.
         self.alice = User(username="alice", email="alice@example.org")
@@ -14,7 +15,7 @@ class BaseTestCase(TestCase):
         self.alice.save()
 
         self.project = Project(owner=self.alice, api_key="X" * 32)
-        self.project.name = "Alice's Project"
+        self.project.name = "Alices Project"
         self.project.badge_key = self.alice.username
         self.project.save()
 
@@ -51,3 +52,8 @@ class BaseTestCase(TestCase):
         self.charlies_profile.save()
 
         self.channels_url = "/projects/%s/integrations/" % self.project.code
+
+    def set_sudo_flag(self):
+        session = self.client.session
+        session["sudo"] = TimestampSigner().sign("active")
+        session.save()

@@ -59,11 +59,13 @@
             <div class="panel-body settings-block">
                 <h2>Project Name</h2>
                 {{ project }}
+                {% if rw %}
                 <a
                     href="#"
                     class="btn btn-default pull-right"
                     data-toggle="modal"
                     data-target="#set-project-name-modal">Change Project Name</a>
+                {% endif %}
             </div>
 
            {% if project_name_updated %}
@@ -110,10 +112,12 @@
                         API access is enabled.
                             {% csrf_token %}
 
+                            {% if rw %}
                             <button
                                 type="submit"
                                 name="show_api_keys"
                                 class="btn btn-default pull-right">Show API Keys</button>
+                            {% endif %}
                         </form>
                     {% endif %}
                 {% else %}
@@ -158,15 +162,21 @@
                             <td>Owner</td>
                             <td></td>
                         </tr>
-                        {% for user in project.team %}
+                        {% for m in project.member_set.all %}
                         <tr>
-                            <td class="email">{{ user.email }}</td>
-                            <td>Member</td>
+                            <td class="email">{{ m.user.email }}</td>
+                            <td>
+                                {% if m.rw %}
+                                Member
+                                {% else %}
+                                Read-only
+                                {% endif %}
+                            </td>
                             <td>
                                 {% if is_owner %}
                                 <a
                                     href="#"
-                                    data-email="{{ user.email }}"
+                                    data-email="{{ m.user.email }}"
                                     class="pull-right member-remove">Remove</a>
                                 {% endif %}
                             </td>
@@ -374,9 +384,10 @@
                         <li>Team Members can create and manage Checks and Integrations</li>
                         <li>Only the project owner (you) can view and edit billing settings</li>
                     </ul>
+                    <br />
                     <div class="form-group">
-                        <label for="itm-email" class="col-sm-2 control-label">Email</label>
-                        <div class="col-sm-9">
+                        <label for="itm-email" class="col-sm-3 control-label">Email</label>
+                        <div class="col-sm-8">
                             <input
                                 type="email"
                                 class="form-control"
@@ -386,6 +397,37 @@
                                 placeholder="friend@example.org">
                         </div>
                     </div>
+
+                    <div class="form-group">
+                        <label class="col-sm-3 control-label">Access Level</label>
+
+                        <div class="col-sm-8">
+                        <label class="radio-container">
+                            <input
+                                type="radio"
+                                name="rw"
+                                value="1"
+                                checked>
+                            <span class="radiomark"></span>
+                            Team Member
+                        </label>
+                        <label class="radio-container">
+                            <input
+                                type="radio"
+                                name="rw"
+                                value="">
+                            <span class="radiomark"></span>
+                            Read-only
+                            <span class="help-block">
+                                Cannot modify checks or integrations.
+                                Cannot access project's API keys.
+                            </span>
+                        </label>
+                        </div>
+                    </div>
+
+
+
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>

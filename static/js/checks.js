@@ -1,7 +1,7 @@
 $(function () {
     var base = document.getElementById("base-url").getAttribute("href").slice(0, -1);
 
-    $(".my-checks-name").click(function() {
+    $(".rw .my-checks-name").click(function() {
         var code = $(this).closest("tr.checks-row").attr("id");
         var url = base + "/checks/" + code + "/name/";
 
@@ -27,7 +27,7 @@ $(function () {
         }
     });
 
-    $(".integrations").on("click", "span", function() {
+    $(".rw .integrations").on("click", "span", function() {
         var isOff = $(this).toggleClass("off").hasClass("off");
         var token = $('input[name=csrfmiddlewaretoken]').val();
 
@@ -65,6 +65,11 @@ $(function () {
         $("#ping-details-log").attr("href", logUrl);
 
         return false;
+    });
+
+    $(".last-ping").tooltip({
+        selector: ".label-confirmation",
+        title: 'The word "confirm" was found in request body'
     });
 
     function applyFilters() {
@@ -176,7 +181,6 @@ $(function () {
     $(".pause").mouseleave(function() {
         $(this).removeClass("confirm").tooltip("hide");
     });
-
 
     $('[data-toggle="tooltip"]').tooltip({
         html: true,

@@ -6,7 +6,7 @@ from hc.test import BaseTestCase
 
 class AddOpsGenieTestCase(BaseTestCase):
     def setUp(self):
-        super(AddOpsGenieTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_opsgenie/" % self.project.code
 
     def test_instructions_work(self):
@@ -48,3 +48,11 @@ class AddOpsGenieTestCase(BaseTestCase):
         c = Channel.objects.get()
         payload = json.loads(c.value)
         self.assertEqual(payload["region"], "eu")
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)

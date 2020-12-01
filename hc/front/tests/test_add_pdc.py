@@ -6,7 +6,7 @@ from hc.test import BaseTestCase
 @override_settings(PD_VENDOR_KEY="foo")
 class AddPdConnectTestCase(BaseTestCase):
     def setUp(self):
-        super(AddPdConnectTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_pdc/" % self.project.code
 
     def test_it_works(self):
@@ -30,3 +30,11 @@ class AddPdConnectTestCase(BaseTestCase):
 
         r = self.client.get(self.url)
         self.assertEqual(r.status_code, 404)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)

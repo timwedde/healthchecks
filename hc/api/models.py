@@ -205,8 +205,10 @@ class Check(models.Model):
     def channels_str(self):
         """ Return a comma-separated string of assigned channel codes. """
 
-        codes = self.channel_set.order_by("code").values_list("code", flat=True)
-        return ",".join(map(str, codes))
+        # self.channel_set may already be prefetched.
+        # Sort in python to make sure we do't run additional queries
+        codes = [str(channel.code) for channel in self.channel_set.all()]
+        return ",".join(sorted(codes))
 
     @property
     def unique_key(self):
@@ -225,6 +227,7 @@ class Check(models.Model):
             "last_ping": isostring(self.last_ping),
             "next_ping": isostring(self.get_grace_start()),
             "manual_resume": self.manual_resume,
+            "methods": self.methods,
         }
 
         if self.last_duration:
@@ -249,7 +252,7 @@ class Check(models.Model):
 
         return result
 
-    def ping(self, remote_addr, scheme, method, ua, body, action):
+    def ping(self, remote_addr, scheme, method, ua, body, action, exitstatus=None):
         now = timezone.now()
 
         if self.status == "paused" and self.manual_resume:
@@ -296,6 +299,7 @@ class Check(models.Model):
         # If User-Agent is longer than 200 characters, truncate it:
         ping.ua = ua[:200]
         ping.body = body[: settings.PING_BODY_LIMIT]
+        ping.exitstatus = exitstatus
         ping.save()
 
     def downtimes(self, months=3):
@@ -348,6 +352,7 @@ class Ping(models.Model):
     method = models.CharField(max_length=10, blank=True)
     ua = models.CharField(max_length=200, blank=True)
     body = models.TextField(blank=True, null=True)
+    exitstatus = models.SmallIntegerField(null=True)
 
     def to_dict(self):
         return {
@@ -486,7 +491,8 @@ class Channel(models.Model):
         n.save()
 
         # These are not database fields. It is just a convenient way to pass
-        # status_url to transport classes.
+        # status_url and the is_test flag to transport classes.
+        check.is_test = is_test
         check.status_url = n.status_url()
 
         error = self.transport.notify(check) or ""
@@ -761,15 +767,15 @@ class Channel(models.Model):
 
 
 class Notification(models.Model):
-    class Meta:
-        get_latest_by = "created"
-
     code = models.UUIDField(default=uuid.uuid4, null=True, editable=False)
     owner = models.ForeignKey(Check, models.CASCADE, null=True)
     check_status = models.CharField(max_length=6)
     channel = models.ForeignKey(Channel, models.CASCADE)
     created = models.DateTimeField(auto_now_add=True)
     error = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        get_latest_by = "created"
 
     def status_url(self):
         path = reverse("hc-api-notification-status", args=[self.code])
@@ -880,3 +886,10 @@ class TokenBucket(models.Model):
 
         # 10 messages for a single chat per minute:
         return TokenBucket.authorize(value, 10, 60)
+
+    @staticmethod
+    def authorize_sudo_code(user):
+        value = "sudo-%d" % user.id
+
+        # 10 sudo attempts per day
+        return TokenBucket.authorize(value, 10, 3600 * 24)

@@ -11,6 +11,7 @@ from django.db import models
 from django.db.models import Count, Q
 from django.urls import reverse
 from django.utils import timezone
+from fido2.ctap2 import AttestedCredentialData
 from hc.lib import emails
 from hc.lib.date import month_boundaries
 
@@ -116,18 +117,6 @@ class Profile(models.Model):
             "project": project,
         }
         emails.transfer_request(self.user.email, ctx)
-
-    def send_set_password_link(self):
-        token = self.prepare_token("set-password")
-        path = reverse("hc-set-password", args=[token])
-        ctx = {"button_text": "Set Password", "button_url": settings.SITE_ROOT + path}
-        emails.set_password(self.user.email, ctx)
-
-    def send_change_email_link(self):
-        token = self.prepare_token("change-email")
-        path = reverse("hc-change-email", args=[token])
-        ctx = {"button_text": "Change Email", "button_url": settings.SITE_ROOT + path}
-        emails.change_email(self.user.email, ctx)
 
     def send_sms_limit_notice(self, transport):
         ctx = {"transport": transport, "limit": self.sms_limit}
@@ -318,14 +307,14 @@ class Project(models.Model):
         used = q.distinct().count()
         return used < self.owner_profile.team_limit
 
-    def invite(self, user):
+    def invite(self, user, rw):
         if Member.objects.filter(user=user, project=self).exists():
             return False
 
         if self.owner_id == user.id:
             return False
 
-        Member.objects.create(user=user, project=self)
+        Member.objects.create(user=user, project=self, rw=rw)
         checks_url = reverse("hc-checks", args=[self.code])
         user.profile.send_instant_login_link(self, redirect_url=checks_url)
         return True
@@ -379,6 +368,7 @@ class Member(models.Model):
     user = models.ForeignKey(User, models.CASCADE, related_name="memberships")
     project = models.ForeignKey(Project, models.CASCADE)
     transfer_request_date = models.DateTimeField(null=True, blank=True)
+    rw = models.BooleanField(default=True)
 
     class Meta:
         constraints = [
@@ -389,3 +379,15 @@ class Member(models.Model):
 
     def can_accept(self):
         return self.user.profile.can_accept(self.project)
+
+
+class Credential(models.Model):
+    code = models.UUIDField(default=uuid.uuid4, unique=True)
+    name = models.CharField(max_length=100)
+    user = models.ForeignKey(User, models.CASCADE, related_name="credentials")
+    created = models.DateTimeField(auto_now_add=True)
+    data = models.BinaryField()
+
+    def unpack(self):
+        unpacked, remaining_data = AttestedCredentialData.unpack_from(self.data)
+        return unpacked

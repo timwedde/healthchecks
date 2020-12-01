@@ -3,6 +3,7 @@ import os
 from django.conf import settings
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.utils.html import escape
 import json
 import requests
 from urllib.parse import quote, urlencode
@@ -168,9 +169,8 @@ class HttpTransport(Transport):
             return "Connection failed"
 
     @classmethod
-    def get(cls, url, **kwargs):
-        # Make 3 attempts--
-        for x in range(0, 3):
+    def get(cls, url, num_tries=3, **kwargs):
+        for x in range(0, num_tries):
             error = cls._request("get", url, **kwargs)
             if error is None:
                 break
@@ -178,9 +178,8 @@ class HttpTransport(Transport):
         return error
 
     @classmethod
-    def post(cls, url, **kwargs):
-        # Make 3 attempts--
-        for x in range(0, 3):
+    def post(cls, url, num_tries=3, **kwargs):
+        for x in range(0, num_tries):
             error = cls._request("post", url, **kwargs)
             if error is None:
                 break
@@ -188,9 +187,8 @@ class HttpTransport(Transport):
         return error
 
     @classmethod
-    def put(cls, url, **kwargs):
-        # Make 3 attempts--
-        for x in range(0, 3):
+    def put(cls, url, num_tries=3, **kwargs):
+        for x in range(0, num_tries):
             error = cls._request("put", url, **kwargs)
             if error is None:
                 break
@@ -239,14 +237,19 @@ class Webhook(HttpTransport):
 
         body = spec["body"]
         if body:
-            body = self.prepare(body, check)
+            body = self.prepare(body, check).encode()
+
+        num_tries = 3
+        if getattr(check, "is_test"):
+            # When sending a test notification, don't retry on failures.
+            num_tries = 1
 
         if spec["method"] == "GET":
-            return self.get(url, headers=headers)
+            return self.get(url, num_tries=num_tries, headers=headers)
         elif spec["method"] == "POST":
-            return self.post(url, data=body.encode(), headers=headers)
+            return self.post(url, num_tries=num_tries, data=body, headers=headers)
         elif spec["method"] == "PUT":
-            return self.put(url, data=body.encode(), headers=headers)
+            return self.put(url, num_tries=num_tries, data=body, headers=headers)
 
 
 class Slack(HttpTransport):
@@ -579,9 +582,35 @@ class Apprise(HttpTransport):
 
 
 class MsTeams(HttpTransport):
+    def escape_md(self, s):
+        # Escape special HTML characters
+        s = escape(s)
+        # Escape characters that have special meaning in Markdown
+        for c in r"\`*_{}[]()#+-.!|":
+            s = s.replace(c, "\\" + c)
+        return s
+
     def notify(self, check):
         text = tmpl("msteams_message.json", check=check)
         payload = json.loads(text)
+
+        # MS Teams escapes HTML special characters in the summary field.
+        # It does not interpret summary content as Markdown.
+        name = check.name_then_code()
+        payload["summary"] = f"“{name}” is {check.status.upper()}."
+
+        # MS teams *strips* HTML special characters from the title field.
+        # To avoid that, we use escape().
+        # It does not interpret title as Markdown.
+        safe_name = escape(name)
+        payload["title"] = f"“{safe_name}” is {check.status.upper()}."
+
+        # MS teams allows some HTML in the section text.
+        # It also interprets the section text as Markdown.
+        # We want to display the raw content, angle brackets and all,
+        # so we run escape() and then additionally escape Markdown:
+        payload["sections"][0]["text"] = self.escape_md(check.desc)
+
         return self.post(self.channel.value, json=payload)
 
 
@@ -629,7 +658,5 @@ class LineNotify(HttpTransport):
             "Content-Type": "application/x-www-form-urlencoded",
             "Authorization": "Bearer %s" % self.channel.linenotify_token,
         }
-        payload = {
-            "message": tmpl("linenotify_message.html", check=check)
-        }
+        payload = {"message": tmpl("linenotify_message.html", check=check)}
         return self.post(self.URL, headers=headers, params=payload)

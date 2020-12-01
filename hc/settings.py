@@ -151,8 +151,6 @@ if os.getenv("DB") == "mysql":
 
 USE_TZ = True
 TIME_ZONE = "UTC"
-USE_I18N = True
-USE_L10N = True
 LOCALE_PATHS = (os.path.join(BASE_DIR, "locale"),)
 
 SITE_ROOT = os.getenv("SITE_ROOT", "http://localhost:8000")
@@ -171,6 +169,9 @@ STATICFILES_FINDERS = (
 )
 COMPRESS_OFFLINE = True
 COMPRESS_CSS_HASHING_METHOD = "content"
+
+# WebAuthn
+RP_ID = os.getenv("RP_ID")
 
 # Discord integration
 DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
@@ -224,6 +225,10 @@ APPRISE_ENABLED = envbool("APPRISE_ENABLED", "False")
 
 # Local shell commands
 SHELL_ENABLED = envbool("SHELL_ENABLED", "False")
+
+# LINE Notify
+LINENOTIFY_CLIENT_ID = os.getenv("LINENOTIFY_CLIENT_ID")
+LINENOTIFY_CLIENT_SECRET = os.getenv("LINENOTIFY_CLIENT_SECRET")
 
 # LDAP
 # Baseline configuration.

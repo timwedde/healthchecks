@@ -4,7 +4,7 @@ from hc.test import BaseTestCase
 
 class UpdateNameTestCase(BaseTestCase):
     def setUp(self):
-        super(UpdateNameTestCase, self).setUp()
+        super().setUp()
         self.check = Check.objects.create(project=self.project)
 
         self.url = "/checks/%s/name/" % self.check.code
@@ -40,6 +40,16 @@ class UpdateNameTestCase(BaseTestCase):
         self.client.login(username="charlie@example.org", password="password")
         r = self.client.post(self.url, data=payload)
         self.assertEqual(r.status_code, 404)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        payload = {"name": "Charlie Sent This"}
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.post(self.url, data=payload)
+        self.assertEqual(r.status_code, 403)
 
     def test_it_handles_bad_uuid(self):
         url = "/checks/not-uuid/name/"

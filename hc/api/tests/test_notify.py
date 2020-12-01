@@ -58,6 +58,9 @@ class NotifyTestCase(BaseTestCase):
         self._setup_data("webhook", json.dumps(definition))
         self.channel.notify(self.check)
 
+        # The transport should have retried 3 times
+        self.assertEqual(mock_get.call_count, 3)
+
         n = Notification.objects.get()
         self.assertEqual(n.error, "Connection timed out")
 
@@ -74,6 +77,9 @@ class NotifyTestCase(BaseTestCase):
         }
         self._setup_data("webhook", json.dumps(definition))
         self.channel.notify(self.check)
+
+        # The transport should have retried 3 times
+        self.assertEqual(mock_get.call_count, 3)
 
         n = Notification.objects.get()
         self.assertEqual(n.error, "Connection failed")
@@ -92,8 +98,29 @@ class NotifyTestCase(BaseTestCase):
 
         self.channel.notify(self.check)
 
+        # The transport should have retried 3 times
+        self.assertEqual(mock_get.call_count, 3)
+
         n = Notification.objects.get()
         self.assertEqual(n.error, "Received status code 500")
+
+    @patch("hc.api.transports.requests.request", side_effect=Timeout)
+    def test_webhooks_dont_retry_when_sending_test_notifications(self, mock_get):
+        definition = {
+            "method_down": "GET",
+            "url_down": "http://example",
+            "body_down": "",
+            "headers_down": {},
+        }
+
+        self._setup_data("webhook", json.dumps(definition))
+        self.channel.notify(self.check, is_test=True)
+
+        # is_test flag is set, the transport should not retry:
+        self.assertEqual(mock_get.call_count, 1)
+
+        n = Notification.objects.get()
+        self.assertEqual(n.error, "Connection timed out")
 
     @patch("hc.api.transports.requests.request")
     def test_webhooks_support_variables(self, mock_get):
@@ -859,12 +886,39 @@ class NotifyTestCase(BaseTestCase):
         self._setup_data("msteams", "http://example.com/webhook")
         mock_post.return_value.status_code = 200
 
+        self.check.name = "_underscores_ & more"
+
         self.channel.notify(self.check)
         assert Notification.objects.count() == 1
 
         args, kwargs = mock_post.call_args
         payload = kwargs["json"]
         self.assertEqual(payload["@type"], "MessageCard")
+
+        # summary and title should be the same, except
+        # title should have any special HTML characters escaped
+        self.assertEqual(payload["summary"], "“_underscores_ & more” is DOWN.")
+        self.assertEqual(payload["title"], "“_underscores_ &amp; more” is DOWN.")
+
+    @patch("hc.api.transports.requests.request")
+    def test_msteams_escapes_html_and_markdown_in_desc(self, mock_post):
+        self._setup_data("msteams", "http://example.com/webhook")
+        mock_post.return_value.status_code = 200
+
+        self.check.desc = """
+            TEST _underscore_ `backticks` <u>underline</u> \\backslash\\ "quoted"
+        """
+
+        self.channel.notify(self.check)
+
+        args, kwargs = mock_post.call_args
+        text = kwargs["json"]["sections"][0]["text"]
+
+        self.assertIn(r"\_underscore\_", text)
+        self.assertIn(r"\`backticks\`", text)
+        self.assertIn("&lt;u&gt;underline&lt;/u&gt;", text)
+        self.assertIn(r"\\backslash\\ ", text)
+        self.assertIn("&quot;quoted&quot;", text)
 
     @patch("hc.api.transports.os.system")
     @override_settings(SHELL_ENABLED=True)

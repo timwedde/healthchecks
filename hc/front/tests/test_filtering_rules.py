@@ -4,7 +4,7 @@ from hc.test import BaseTestCase
 
 class FilteringRulesTestCase(BaseTestCase):
     def setUp(self):
-        super(FilteringRulesTestCase, self).setUp()
+        super().setUp()
         self.check = Check.objects.create(project=self.project)
 
         self.url = "/checks/%s/filtering_rules/" % self.check.code
@@ -20,7 +20,7 @@ class FilteringRulesTestCase(BaseTestCase):
         }
 
         self.client.login(username="alice@example.org", password="password")
-        r = self.client.post(self.url, data=payload,)
+        r = self.client.post(self.url, data=payload)
         self.assertRedirects(r, self.redirect_url)
 
         self.check.refresh_from_db()
@@ -72,3 +72,19 @@ class FilteringRulesTestCase(BaseTestCase):
 
         self.check.refresh_from_db()
         self.assertFalse(self.check.manual_resume)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        payload = {
+            "subject": "SUCCESS",
+            "subject_fail": "ERROR",
+            "methods": "POST",
+            "manual_resume": "1",
+            "filter_by_subject": "yes",
+        }
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.post(self.url, payload)
+        self.assertEqual(r.status_code, 403)

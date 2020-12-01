@@ -8,7 +8,7 @@ from hc.test import BaseTestCase
 
 class UpdateCheckTestCase(BaseTestCase):
     def setUp(self):
-        super(UpdateCheckTestCase, self).setUp()
+        super().setUp()
         self.check = Check.objects.create(project=self.project)
 
     def post(self, code, data):
@@ -123,6 +123,28 @@ class UpdateCheckTestCase(BaseTestCase):
         self.check.refresh_from_db()
         self.assertEqual(self.check.channel_set.count(), 1)
 
+    def test_it_sets_channel_by_name(self):
+        channel = Channel.objects.create(project=self.project, name="alerts")
+
+        r = self.post(self.check.code, {"api_key": "X" * 32, "channels": "alerts"})
+
+        self.assertEqual(r.status_code, 200)
+
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.channel_set.count(), 1)
+        self.assertEqual(self.check.channel_set.first().code, channel.code)
+
+    def test_it_sets_channel_by_name_formatted_as_uuid(self):
+        name = "102eaa82-a274-4b15-a499-c1bb6bbcd7b6"
+        channel = Channel.objects.create(project=self.project, name=name)
+
+        r = self.post(self.check.code, {"api_key": "X" * 32, "channels": name})
+        self.assertEqual(r.status_code, 200)
+
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.channel_set.count(), 1)
+        self.assertEqual(self.check.channel_set.first().code, channel.code)
+
     def test_it_handles_comma_separated_channel_codes(self):
         c1 = Channel.objects.create(project=self.project)
         c2 = Channel.objects.create(project=self.project)
@@ -187,10 +209,33 @@ class UpdateCheckTestCase(BaseTestCase):
         self.check.refresh_from_db()
         self.assertEqual(self.check.channel_set.count(), 0)
 
-    def test_it_rejects_non_uuid_channel_code(self):
+    def test_it_handles_channel_lookup_by_name_with_no_results(self):
         r = self.post(self.check.code, {"api_key": "X" * 32, "channels": "foo"})
 
         self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["error"], "invalid channel identifier: foo")
+
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.channel_set.count(), 0)
+
+    def test_it_handles_channel_lookup_by_name_with_multiple_results(self):
+        Channel.objects.create(project=self.project, name="foo")
+        Channel.objects.create(project=self.project, name="foo")
+
+        r = self.post(self.check.code, {"api_key": "X" * 32, "channels": "foo"})
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["error"], "non-unique channel identifier: foo")
+
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.channel_set.count(), 0)
+
+    def test_it_rejects_multiple_empty_channel_names(self):
+        Channel.objects.create(project=self.project, name="")
+
+        r = self.post(self.check.code, {"api_key": "X" * 32, "channels": ","})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["error"], "empty channel identifier")
 
         self.check.refresh_from_db()
         self.assertEqual(self.check.channel_set.count(), 0)
@@ -242,3 +287,36 @@ class UpdateCheckTestCase(BaseTestCase):
 
         self.check.refresh_from_db()
         self.assertFalse(self.check.manual_resume)
+
+    def test_it_sets_methods(self):
+        r = self.post(self.check.code, {"api_key": "X" * 32, "methods": "POST"})
+        self.assertEqual(r.status_code, 200)
+
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.methods, "POST")
+
+    def test_it_clears_methods(self):
+        self.check.methods = "POST"
+        self.check.save()
+
+        # Client supplies an empty string: we should save it
+        r = self.post(self.check.code, {"api_key": "X" * 32, "methods": ""})
+        self.assertEqual(r.status_code, 200)
+
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.methods, "")
+
+    def test_it_leaves_methods_unchanged(self):
+        self.check.methods = "POST"
+        self.check.save()
+
+        # Client omits the methods key: we should leave it unchanged
+        r = self.post(self.check.code, {"api_key": "X" * 32})
+        self.assertEqual(r.status_code, 200)
+
+        self.check.refresh_from_db()
+        self.assertEqual(self.check.methods, "POST")
+
+    def test_it_rejects_bad_methods_value(self):
+        r = self.post(self.check.code, {"api_key": "X" * 32, "methods": "bad-value"})
+        self.assertEqual(r.status_code, 400)

@@ -1,7 +1,24 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## v1.17.0-dev - Unreleased
+## v1.18.0-dev - Unreleased
+
+## Improvements
+- Add a tooltip to the 'confirmation link' label (#436)
+- Update API to allow specifying channels by names (#440)
+- When saving a phone number, remove any invisible unicode characers
+- Update the read-only dashboard's CSS for better mobile support (#442)
+- Reduce the number of SQL queries used in the "Get Checks" API call
+- Add support for script's exit status in ping URLs (#429)
+- Improve phone number sanitization: remove spaces and hyphens
+- Change the "Test Integration" behavior for webhooks: don't retry failed requests
+- Add retries to the the email sending logic
+- Require confirmation codes (sent to email) before sensitive actions
+- Implement WebAuthn two-factor authentication
+- Implement badge mode (up/down vs up/late/down) selector (#282)
+- Add Ping.exitstatus field, store client's reported exit status values (#455)
+
+## v1.17.0 - 2020-10-14
 
 ## Improvements
 - Django 3.1
@@ -10,11 +27,18 @@ All notable changes to this project will be documented in this file.
 - Less verbose output in the `senddeletionnotices` command
 - Host a read-only dashboard (from github.com/healthchecks/dashboard/)
 - LINE Notify integration (#412)
+- Read-only team members
+- API support for setting the allowed HTTP methods for making ping requests
 
 ## Bug Fixes
 - Handle excessively long email addresses in the signup form
 - Handle excessively long email addresses in the team member invite form
 - Don't allow duplicate team memberships
+- When copying a check, copy all fields from the "Filtering Rules" dialog (#417)
+- Fix missing Resume button (#421)
+- When decoding inbound emails, decode encoded headers (#420)
+- Escape markdown in MS Teams notifications (#426)
+- Set the "title" and "summary" fields in MS Teams notifications (#435)
 
 ## v1.16.0 - 2020-08-04
 

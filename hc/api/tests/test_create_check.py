@@ -40,6 +40,7 @@ class CreateCheckTestCase(BaseTestCase):
         self.assertEqual(doc["tags"], "bar,baz")
         self.assertEqual(doc["last_ping"], None)
         self.assertEqual(doc["n_pings"], 0)
+        self.assertEqual(doc["methods"], "")
 
         self.assertTrue("schedule" not in doc)
         self.assertTrue("tz" not in doc)
@@ -47,6 +48,7 @@ class CreateCheckTestCase(BaseTestCase):
         check = Check.objects.get()
         self.assertEqual(check.name, "Foo")
         self.assertEqual(check.tags, "bar,baz")
+        self.assertEqual(check.methods, "")
         self.assertEqual(check.timeout.total_seconds(), 3600)
         self.assertEqual(check.grace.total_seconds(), 60)
         self.assertEqual(check.project, self.project)
@@ -84,7 +86,28 @@ class CreateCheckTestCase(BaseTestCase):
         check = Check.objects.get()
         self.assertEqual(check.channel_set.get(), channel)
 
-    def test_it_rejects_bad_channel_code(self):
+    def test_it_sets_channel_by_name(self):
+        channel = Channel.objects.create(project=self.project, name="alerts")
+
+        r = self.post({"api_key": "X" * 32, "channels": "alerts"})
+        self.assertEqual(r.status_code, 201)
+
+        check = Check.objects.get()
+        assigned_channel = check.channel_set.get()
+        self.assertEqual(assigned_channel, channel)
+
+    def test_it_sets_channel_by_name_formatted_as_uuid(self):
+        name = "102eaa82-a274-4b15-a499-c1bb6bbcd7b6"
+        channel = Channel.objects.create(project=self.project, name=name)
+
+        r = self.post({"api_key": "X" * 32, "channels": name})
+        self.assertEqual(r.status_code, 201)
+
+        check = Check.objects.get()
+        assigned_channel = check.channel_set.get()
+        self.assertEqual(assigned_channel, channel)
+
+    def test_it_handles_channel_lookup_by_name_with_no_results(self):
         r = self.post({"api_key": "X" * 32, "channels": "abc"})
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.json()["error"], "invalid channel identifier: abc")
@@ -92,16 +115,44 @@ class CreateCheckTestCase(BaseTestCase):
         # The check should not have been saved
         self.assertFalse(Check.objects.exists())
 
-    def test_it_supports_unique(self):
-        Check.objects.create(project=self.project, name="Foo")
+    def test_it_handles_channel_lookup_by_name_with_multiple_results(self):
+        Channel.objects.create(project=self.project, name="foo")
+        Channel.objects.create(project=self.project, name="foo")
 
-        r = self.post({"api_key": "X" * 32, "name": "Foo", "unique": ["name"]})
+        r = self.post({"api_key": "X" * 32, "channels": "foo"})
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["error"], "non-unique channel identifier: foo")
+
+        # The check should not have been saved
+        self.assertFalse(Check.objects.exists())
+
+    def test_it_rejects_multiple_empty_channel_names(self):
+        Channel.objects.create(project=self.project, name="")
+
+        r = self.post({"api_key": "X" * 32, "channels": ","})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["error"], "empty channel identifier")
+
+        # The check should not have been saved
+        self.assertFalse(Check.objects.exists())
+
+    def test_it_supports_unique(self):
+        check = Check.objects.create(project=self.project, name="Foo")
+
+        r = self.post(
+            {"api_key": "X" * 32, "name": "Foo", "tags": "bar", "unique": ["name"]}
+        )
 
         # Expect 200 instead of 201
         self.assertEqual(r.status_code, 200)
 
         # And there should be only one check in the database:
         self.assertEqual(Check.objects.count(), 1)
+
+        # The tags field should have a value now:
+        check.refresh_from_db()
+        self.assertEqual(check.tags, "bar")
 
     def test_it_handles_missing_request_body(self):
         r = self.client.post(self.URL, content_type="application/json")
@@ -149,7 +200,7 @@ class CreateCheckTestCase(BaseTestCase):
             expected_fragment="name is too long",
         )
 
-    def test_unique_accepts_only_whitelisted_values(self):
+    def test_unique_accepts_only_specific_values(self):
         self.post(
             {"api_key": "X" * 32, "name": "Foo", "unique": ["status"]},
             expected_fragment="unexpected value",
@@ -236,4 +287,15 @@ class CreateCheckTestCase(BaseTestCase):
     def test_it_rejects_non_boolean_manual_resume(self):
         r = self.post({"api_key": "X" * 32, "manual_resume": "surprise"})
 
+        self.assertEqual(r.status_code, 400)
+
+    def test_it_sets_methods(self):
+        r = self.post({"api_key": "X" * 32, "methods": "POST"})
+
+        self.assertEqual(r.status_code, 201)
+        check = Check.objects.get()
+        self.assertEqual(check.methods, "POST")
+
+    def test_it_rejects_bad_methods_value(self):
+        r = self.post({"api_key": "X" * 32, "methods": "bad-value"})
         self.assertEqual(r.status_code, 400)

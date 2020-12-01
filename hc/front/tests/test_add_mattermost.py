@@ -4,7 +4,7 @@ from hc.test import BaseTestCase
 
 class AddMattermostTestCase(BaseTestCase):
     def setUp(self):
-        super(AddMattermostTestCase, self).setUp()
+        super().setUp()
         self.url = "/projects/%s/add_mattermost/" % self.project.code
 
     def test_instructions_work(self):
@@ -23,3 +23,11 @@ class AddMattermostTestCase(BaseTestCase):
         self.assertEqual(c.kind, "mattermost")
         self.assertEqual(c.value, "http://example.org")
         self.assertEqual(c.project, self.project)
+
+    def test_it_requires_rw_access(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+        self.assertEqual(r.status_code, 403)

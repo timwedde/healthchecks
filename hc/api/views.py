@@ -1,6 +1,5 @@
 from datetime import timedelta as td
 import time
-import uuid
 
 from django.conf import settings
 from django.db import connection
@@ -31,7 +30,7 @@ class BadChannelException(Exception):
 
 @csrf_exempt
 @never_cache
-def ping(request, code, action="success"):
+def ping(request, code, action="success", exitstatus=None):
     check = get_object_or_404(Check, code=code)
 
     headers = request.META
@@ -42,10 +41,13 @@ def ping(request, code, action="success"):
     ua = headers.get("HTTP_USER_AGENT", "")
     body = request.body.decode()
 
+    if exitstatus is not None and exitstatus > 0:
+        action = "fail"
+
     if check.methods == "POST" and method != "POST":
         action = "ign"
 
-    check.ping(remote_addr, scheme, method, ua, body, action)
+    check.ping(remote_addr, scheme, method, ua, body, action, exitstatus)
 
     response = HttpResponse("OK")
     response["Access-Control-Allow-Origin"] = "*"
@@ -71,57 +73,90 @@ def _lookup(project, spec):
 
 
 def _update(check, spec):
-    channels = set()
-    # First, validate the supplied channel codes
-    if "channels" in spec and spec["channels"] not in ("*", ""):
-        q = Channel.objects.filter(project=check.project)
+    # First, validate the supplied channel codes/names
+    if "channels" not in spec:
+        # If the channels key is not present, don't update check's channels
+        new_channels = None
+    elif spec["channels"] == "*":
+        # "*" means "all project's channels"
+        new_channels = Channel.objects.filter(project=check.project)
+    elif spec.get("channels") == "":
+        # "" means "empty list"
+        new_channels = []
+    else:
+        # expect a comma-separated list of channel codes or names
+        new_channels = set()
+        available = list(Channel.objects.filter(project=check.project))
+
         for s in spec["channels"].split(","):
-            try:
-                code = uuid.UUID(s)
-            except ValueError:
-                raise BadChannelException("invalid channel identifier: %s" % s)
+            if s == "":
+                raise BadChannelException("empty channel identifier")
 
-            try:
-                channels.add(q.get(code=code))
-            except Channel.DoesNotExist:
+            matches = [c for c in available if str(c.code) == s or c.name == s]
+            if len(matches) == 0:
                 raise BadChannelException("invalid channel identifier: %s" % s)
+            elif len(matches) > 1:
+                raise BadChannelException("non-unique channel identifier: %s" % s)
 
-    if "name" in spec:
+            new_channels.add(matches[0])
+
+    need_save = False
+    if check.pk is None:
+        # Empty pk means we're inserting a new check,
+        # and so do need to save() it:
+        need_save = True
+
+    if "name" in spec and check.name != spec["name"]:
         check.name = spec["name"]
+        need_save = True
 
-    if "tags" in spec:
+    if "tags" in spec and check.tags != spec["tags"]:
         check.tags = spec["tags"]
+        need_save = True
 
-    if "desc" in spec:
+    if "desc" in spec and check.desc != spec["desc"]:
         check.desc = spec["desc"]
+        need_save = True
 
-    if "manual_resume" in spec:
+    if "manual_resume" in spec and check.manual_resume != spec["manual_resume"]:
         check.manual_resume = spec["manual_resume"]
+        need_save = True
+
+    if "methods" in spec and check.methods != spec["methods"]:
+        check.methods = spec["methods"]
+        need_save = True
 
     if "timeout" in spec and "schedule" not in spec:
-        check.kind = "simple"
-        check.timeout = td(seconds=spec["timeout"])
+        new_timeout = td(seconds=spec["timeout"])
+        if check.kind != "simple" or check.timeout != new_timeout:
+            check.kind = "simple"
+            check.timeout = new_timeout
+            need_save = True
 
     if "grace" in spec:
-        check.grace = td(seconds=spec["grace"])
+        new_grace = td(seconds=spec["grace"])
+        if check.grace != new_grace:
+            check.grace = new_grace
+            need_save = True
 
     if "schedule" in spec:
-        check.kind = "cron"
-        check.schedule = spec["schedule"]
-        if "tz" in spec:
-            check.tz = spec["tz"]
+        if check.kind != "cron" or check.schedule != spec["schedule"]:
+            check.kind = "cron"
+            check.schedule = spec["schedule"]
+            need_save = True
 
-    check.alert_after = check.going_down_after()
-    check.save()
+    if "tz" in spec and check.tz != spec["tz"]:
+        check.tz = spec["tz"]
+        need_save = True
+
+    if need_save:
+        check.alert_after = check.going_down_after()
+        check.save()
 
     # This needs to be done after saving the check, because of
     # the M2M relation between checks and channels:
-    if spec.get("channels") == "*":
-        check.assign_all_channels()
-    elif spec.get("channels") == "":
-        check.channel_set.clear()
-    elif channels:
-        check.channel_set.set(channels)
+    if new_channels is not None:
+        check.channel_set.set(new_channels)
 
     return check
 
@@ -130,7 +165,8 @@ def _update(check, spec):
 @authorize_read
 def get_checks(request):
     q = Check.objects.filter(project=request.project)
-    q = q.prefetch_related("channel_set")
+    if not request.readonly:
+        q = q.prefetch_related("channel_set")
 
     tags = set(request.GET.getlist("tag"))
     for tag in tags:
@@ -339,11 +375,15 @@ def flips_by_unique_key(request, unique_key):
 
 @never_cache
 @cors("GET")
-def badge(request, badge_key, signature, tag, fmt="svg"):
-    if not check_signature(badge_key, tag, signature):
+def badge(request, badge_key, signature, tag, fmt):
+    if fmt not in ("svg", "json", "shields"):
         return HttpResponseNotFound()
 
-    if fmt not in ("svg", "json", "shields"):
+    with_late = True
+    if len(signature) == 10 and signature.endswith("-2"):
+        with_late = False
+
+    if not check_signature(badge_key, tag, signature):
         return HttpResponseNotFound()
 
     q = Check.objects.filter(project__badge_key=badge_key)
@@ -370,7 +410,7 @@ def badge(request, badge_key, signature, tag, fmt="svg"):
                 break
         elif check_status == "grace":
             grace += 1
-            if status == "up":
+            if status == "up" and with_late:
                 status = "late"
 
     if fmt == "shields":

@@ -4,7 +4,7 @@ from hc.test import BaseTestCase
 
 class DetailsTestCase(BaseTestCase):
     def setUp(self):
-        super(DetailsTestCase, self).setUp()
+        super().setUp()
         self.check = Check.objects.create(project=self.project)
 
         ping = Ping.objects.create(owner=self.check)
@@ -45,3 +45,32 @@ class DetailsTestCase(BaseTestCase):
         self.client.login(username="alice@example.org", password="password")
         r = self.client.get(self.url + "?new")
         self.assertContains(r, "Your new check is ready!", status_code=200)
+
+    def test_it_hides_actions_from_readonly_users(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+
+        self.assertNotContains(r, "edit-name", status_code=200)
+        self.assertNotContains(r, "edit-desc")
+        self.assertNotContains(r, "Filtering Rules")
+        self.assertNotContains(r, "pause-btn")
+        self.assertNotContains(r, "Change Schedule")
+        self.assertNotContains(r, "Create a Copy&hellip;")
+        self.assertNotContains(r, "transfer-btn")
+        self.assertNotContains(r, "details-remove-check")
+
+    def test_it_hides_resume_action_from_readonly_users(self):
+        self.bobs_membership.rw = False
+        self.bobs_membership.save()
+
+        self.check.status = "paused"
+        self.check.manual_resume = True
+        self.check.save()
+
+        self.client.login(username="bob@example.org", password="password")
+        r = self.client.get(self.url)
+
+        self.assertNotContains(r, "resume-btn", status_code=200)

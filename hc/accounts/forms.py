@@ -1,5 +1,9 @@
+import base64
+import binascii
 from datetime import timedelta as td
+
 from django import forms
+from django.core.exceptions import ValidationError
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from hc.api.models import TokenBucket
@@ -9,6 +13,17 @@ class LowercaseEmailField(forms.EmailField):
     def clean(self, value):
         value = super(LowercaseEmailField, self).clean(value)
         return value.lower()
+
+
+class Base64Field(forms.CharField):
+    def to_python(self, value):
+        if value is None:
+            return None
+
+        try:
+            return base64.b64decode(value.encode())
+        except binascii.Error:
+            raise ValidationError(message="Cannot decode base64")
 
 
 class AvailableEmailForm(forms.Form):
@@ -99,6 +114,7 @@ class ChangeEmailForm(forms.Form):
 
 class InviteTeamMemberForm(forms.Form):
     email = LowercaseEmailField(max_length=254)
+    rw = forms.BooleanField(required=False)
 
 
 class RemoveTeamMemberForm(forms.Form):
@@ -106,8 +122,21 @@ class RemoveTeamMemberForm(forms.Form):
 
 
 class ProjectNameForm(forms.Form):
-    name = forms.CharField(max_length=60, required=True)
+    name = forms.CharField(max_length=60)
 
 
 class TransferForm(forms.Form):
     email = LowercaseEmailField()
+
+
+class AddCredentialForm(forms.Form):
+    name = forms.CharField(max_length=100)
+    client_data_json = Base64Field()
+    attestation_object = Base64Field()
+
+
+class WebAuthnForm(forms.Form):
+    credential_id = Base64Field()
+    client_data_json = Base64Field()
+    authenticator_data = Base64Field()
+    signature = Base64Field()
