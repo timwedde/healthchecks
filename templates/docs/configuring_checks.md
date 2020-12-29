@@ -13,9 +13,9 @@ Describe each check using an optional name, tags, and description fields.
 ![Editing name, tags and description](IMG_URL/edit_name.png)
 
 * **Name**: names are optional, but it is a good idea to set them.
-Good naming becomes especially important as you add more checks in the
+Good naming becomes especially important as you add more checks to the
 account. SITE_NAME will display check names in the web interface, in email reports,
-and in notifications.
+and notifications.
 * **Tags**: a space-separated list of optional labels. Use tags to organize and group
 checks within a project. You can tag checks by the environment
 (`prod`, `staging`, `dev`, etc.) or by role (`www`, `db`, `worker`, etc.) or using
@@ -74,7 +74,7 @@ For example, this is useful if your backup software sends an email after each ba
 run with a different subject line depending on success or failure.
 * **Pinging a Paused Check**. Normally, when you ping a paused check, it leaves the
 paused state and goes into the "up" state (or the "down" state
-in case of [a failure signal](../signalling_failures/)).
+in case of [a failure signal](../signaling_failures/)).
 You can change this behavior by selecting the "Ignore the ping, stay in
 the paused state" option. With this option selected, the paused state becomes "sticky":
 SITE_NAME will ignore all incoming pings until you explicitly *resume* the check.

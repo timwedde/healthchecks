@@ -1,7 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## v1.18.0-dev - Unreleased
+## v1.19.0 - Unreleased
+
+## Improvements
+- Add tighter parameter checks in hc.front.views.serve_doc
+- Update OpsGenie instructions (#450)
+- Update the email notification template to include more check and last ping details
+
+## v1.18.0 - 2020-12-09
 
 ## Improvements
 - Add a tooltip to the 'confirmation link' label (#436)
@@ -17,6 +24,11 @@ All notable changes to this project will be documented in this file.
 - Implement WebAuthn two-factor authentication
 - Implement badge mode (up/down vs up/late/down) selector (#282)
 - Add Ping.exitstatus field, store client's reported exit status values (#455)
+- Implement header-based authentication (#457)
+- Add a "Lost password?" link with instructions in the Sign In page
+
+## Bug Fixes
+- Fix db field overflow when copying a check with a long name
 
 ## v1.17.0 - 2020-10-14
 

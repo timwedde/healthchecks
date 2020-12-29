@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta as td
 import json
 import os
+import re
 from secrets import token_urlsafe
 from urllib.parse import urlencode
 
@@ -314,6 +315,11 @@ def dashboard(request):
 
 
 def serve_doc(request, doc="introduction"):
+    # Filenames in /templates/docs/ consist of lowercase letters and underscores,
+    # -- make sure we don't accept anything else
+    if not re.match(r"^[a-z_]+$", doc):
+        raise Http404("not found")
+
     path = os.path.join(settings.BASE_DIR, "templates/docs", doc + ".html")
     if not os.path.exists(path):
         raise Http404("not found")
@@ -623,8 +629,13 @@ def copy(request, code):
     if check.project.num_checks_available() <= 0:
         return HttpResponseBadRequest()
 
+    new_name = check.name + " (copy)"
+    # Make sure we don't exceed the 100 character db field limit:
+    if len(new_name) > 100:
+        new_name = check.name[:90] + "... (copy)"
+
     copied = Check(project=check.project)
-    copied.name = check.name + " (copy)"
+    copied.name = new_name
     copied.desc, copied.tags = check.desc, check.tags
     copied.subject, copied.subject_fail = check.subject, check.subject_fail
     copied.methods = check.methods
@@ -837,7 +848,7 @@ def unsubscribe_email(request, code, signed_token):
 def send_test_notification(request, code):
     channel, rw = _get_channel_for_user(request, code)
 
-    dummy = Check(name="TEST", status="down")
+    dummy = Check(name="TEST", status="down", project=channel.project)
     dummy.last_ping = timezone.now() - td(days=1)
     dummy.n_pings = 42
 
